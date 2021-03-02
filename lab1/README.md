@@ -44,7 +44,7 @@
 sudo mv /etc/apt/sources.list /etc/apt/sources.list.backup
 ```
 
-然后找到清华的ubuntu下载源https://mirrors.tuna.tsinghua.edu.cn/help/ubuntu。注意，选择你ubuntu的版本对应的下载源。
+然后找到清华的ubuntu下载源[https://mirrors.tuna.tsinghua.edu.cn/help/ubuntu]。注意，选择你ubuntu的版本对应的下载源。
 
 ![清华下载源](images/清华下载源.PNG)
 
