@@ -103,3 +103,12 @@
 
 - <https://mirrors.matrix.moe/kernel/v5.x/> 的 `linux-5.6.12.tar.gz` 等压缩文件提供了 Linux Kernel 源代码的下载。
 - 参照[帮助文档](https://mirrors.matrix.moe/docs/ubuntu)可以设置 Ubuntu 软件源更新使用 Matrix 镜像源。另外，Matrix 镜像源也提供 Arch Linux、Debian、CentOS、Fedora 等发行版的软件源镜像。
+
+## busybox源码
+
+如果github下载速度慢，可以从课程网站处下载。
+
+```
+http://files.dds-sysu.tech/wl/?id=YnIeNeKJ4LVb4bXQTxz4oCCuRs7WIBAr
+```
+
