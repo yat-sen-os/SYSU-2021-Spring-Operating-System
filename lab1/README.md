@@ -46,7 +46,7 @@ sudo mv /etc/apt/sources.list /etc/apt/sources.list.backup
 
 然后找到清华的ubuntu下载源(https://mirrors.tuna.tsinghua.edu.cn/help/ubuntu/)。注意，选择你ubuntu的版本对应的下载源。
 
-![清华下载源](C:\Users\NelsonCheung\Desktop\课程\TA\2021春季操作系统\release\lab1\images\清华下载源.PNG)
+![清华下载源](images/清华下载源.PNG)
 
 然后使用`gedit`打开下载源保存的文件`/etc/apt/sources.list`
 
@@ -105,7 +105,7 @@ cd ~/lab1
 
 到 <https://www.kernel.org/> 下载内核5.10到文件夹`~/lab1`。
 
-<img src="C:\Users\NelsonCheung\Desktop\课程\TA\2021春季操作系统\release\lab1\images\下载linux内核.PNG" alt="下载linux内核" style="zoom:50%;" />
+<img src="images/下载linux内核.PNG" alt="下载linux内核" style="zoom:50%;" />
 
 解压并进入。
 
@@ -255,7 +255,7 @@ make menuconfig
 
 进入`settings`，然后在`Build BusyBox as a static binary(no shared libs)`处输入`Y`勾选，然后分别设置`() Additional CFLAGS`和`() Additional LDFLAGS`为`(-m32 -march=i386) Additional CFLAGS`和`(-m32) Additional LDFLAGS`。
 
-![配置busybox](C:\Users\NelsonCheung\Desktop\课程\TA\2021春季操作系统\release\lab1\images\配置busybox.PNG)
+![配置busybox](images/配置busybox.PNG)
 
 保存退出，然后编译。
 
