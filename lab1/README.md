@@ -46,7 +46,7 @@
 
 # 编译Linux内核
 
-1. 在https://www.kernel.org/下载内核5.10；
+1. 在 <https://www.kernel.org/> 下载内核5.10；
 2. 将内核编译成i386 32位版本；
    1. 利用i386配置文件配置内核，该配置在
       `arch/x86/configs`下面；
@@ -87,6 +87,20 @@
 
 # 编译并启动Busybox  
 
-1. 在https://github.com/meefik/busybox，下载Busybox。
+1. 在 <https://github.com/meefik/busybox>，下载Busybox。
 2. 配置Busybox，静态编译成32位可执行文件。
 3. Qemu启动内核并加载Busybox。
+
+# 附录
+
+## 校园网环境加速
+
+部分软件在校园网下下载可能缓慢，建议使用镜像源。此处推荐两个：
+
+- [Matrix 镜像源](https://mirrors.matrix.moe)（此镜像源位于校内）
+- [清华 Tuna 镜像源](https://mirrors.tuna.tsinghua.edu.cn)
+
+例如，
+
+- <https://mirrors.matrix.moe/kernel/v5.x/> 的 `linux-5.6.12.tar.gz` 等压缩文件提供了 Linux Kernel 源代码的下载。
+- 参照[帮助文档](https://mirrors.matrix.moe/docs/ubuntu)可以设置 Ubuntu 软件源更新使用 Matrix 镜像源。另外，Matrix 镜像源也提供 Arch Linux、Debian、CentOS、Fedora 等发行版的软件源镜像。
