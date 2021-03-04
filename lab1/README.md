@@ -135,6 +135,8 @@ make -j8
 
 # 启动内核并调试  
 
+> qemu和gdb是常用的程序调试工具，如果你不知道qemu是什么，请参考[https://baike.baidu.com/item/QEMU/1311178?fr=aladdin]；同样地，如果你不知道gdb是什么，请参考[https://baike.baidu.com/item/gdb/10869514?fr=aladdin]。
+
 下面的过程在文件夹`~/lab1`下进行。
 
 ```shell
@@ -149,21 +151,23 @@ cd ~/lab1
 qemu-system-i386 -kernel linux-5.10.19/arch/x86/boot/bzImage -s -S -append "console=ttyS0" -nographic
 ```
 
+此时，同学们会发现qemu并未输出任何信息。这是因为我们开启了gdb调试，而qemu在等待gdb输入的指令后才能继续执行。接下来我们启动gdb，通过gdb来告诉qemu应该怎么做。
+
 ## gdb调试
 
-启动gdb。
+在另外一个Terminal下启动gdb，注意，不要关闭qemu所在的Terminal。
 
 ```shell
 gdb
 ```
 
-加载符号表
+在gdb下，加载符号表
 
 ```shell
 file linux-5.10.19/vmlinux
 ```
 
-在gdb下已经启动的qemu进行调试。
+在gdb下，连接已经启动的qemu进行调试。
 
 ```shell
 target remote:1234
