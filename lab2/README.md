@@ -631,7 +631,7 @@ bochs是以GNU宽通用公共许可证发放的开放源代码的x86、x86-64、
 
 我们的显示屏实际上是按25x80个字符来排列的矩阵，如下所示。
 
-<img src="gallery\显示屏大小演示.PNG" alt="显示屏大小演示" style="zoom:38%;" />
+<img src="gallery/显示屏大小演示.PNG" alt="显示屏大小演示" style="zoom:38%;" />
 
 上面这张图是用`*`填满了显示屏的各个显示位置而产生的。可以看到，25x80个字符的显示矩阵指的是横向80个字符，纵向25个字符。我们不妨记$(x,y)$为显示矩阵中的一个点，则有
 $$
@@ -642,11 +642,11 @@ $$
 
 为了便于控制显示，IA-32处理器将显示矩阵映射到内存地址0xB8000\~0xBFFFF处，这段地址称为显存地址。在文本模式下，控制器的最小可控制单位为字符。每一个显示字符自上而下，从左到右依次使用0xB8000\~0xBFFFF中的两个字节表示。其中，低字节表示显示的字符，高字节表示字符的颜色属性，如下所示。
 
-<img src="gallery\显存对应关系.PNG" alt="显存对应关系" style="zoom:38%;" />
+<img src="gallery/显存对应关系.PNG" alt="显存对应关系" style="zoom:38%;" />
 
 字符的颜色属性的字节高8位表示背景色，低八位表示前景色，如下所示。
 
-<img src="gallery\字符属性对应表.PNG" alt="字符属性对应表" style="zoom:38%;" />
+<img src="gallery/字符属性对应表.PNG" alt="字符属性对应表" style="zoom:38%;" />
 
 在上面的对显示矩阵的点的描述中，我们使用的是二维的点，但对应到显存是一维的，因此我们需要进行维度的转换，即显示矩阵的点$(x,y)$对应到显存的起始位置如下所示。
 $$
@@ -677,7 +677,7 @@ $$
 
 然后我们看到在当前目录下生成了硬盘hd.img，过程如下所示。
 
-<img src="gallery\使用bximage生成硬盘.PNG" alt="使用bximage生成硬盘" style="zoom:38%;" />
+<img src="gallery/使用bximage生成硬盘.PNG" alt="使用bximage生成硬盘" style="zoom:38%;" />
 
 请注意如下输出的信息。
 
@@ -691,11 +691,11 @@ Creating hard disk image 'hd.img' with CHS=20/16/63 (sector size = 512)
 
 我们双击bochs运行，点击`Disk&Boot`配置硬盘信息和启动顺序，后面bochs启动是会根据我们配置的信息来加载MBR。
 
-<img src="gallery\bochs配置-1.PNG" alt="bochs配置-1" style="zoom:38%;" />
+<img src="gallery/bochs配置-1.PNG" alt="bochs配置-1" style="zoom:38%;" />
 
 按之前根据bximage生成的信息填入，如果同学们按自己的参数生成硬盘，请以你的为准。
 
-![bochs配置-2](gallery\bochs配置-2.PNG)
+![bochs配置-2](gallery/bochs配置-2.PNG)
 
 各参数解释如下。
 
@@ -705,29 +705,29 @@ Creating hard disk image 'hd.img' with CHS=20/16/63 (sector size = 512)
 
 然后设置硬盘启动。
 
-<img src="gallery\bochs配置-3.PNG" alt="bochs配置-3" style="zoom:38%;" />
+<img src="gallery/bochs配置-3.PNG" alt="bochs配置-3" style="zoom:38%;" />
 
 点击OK，完成配置。
 
 由于上次配置的信息在下次启动bochs时不会被保存，为了避免每次都要重复配置，我们将本次配置的信息保存下来。点击save即可保存配置信息。
 
-<img src="gallery\bochs配置-4.PNG" alt="bochs配置-4" style="zoom:38%;" />
+<img src="gallery/bochs配置-4.PNG" alt="bochs配置-4" style="zoom:38%;" />
 
 下次打开bochs时直接load即可，无需重新配置。
 
-<img src="gallery\bochs配置-5.PNG" alt="bochs配置-5" style="zoom:38%;" />
+<img src="gallery/bochs配置-5.PNG" alt="bochs配置-5" style="zoom:38%;" />
 
 load之后点击stat即可启动。
 
-<img src="gallery\bochs配置-6.PNG" alt="bochs配置-6" style="zoom:38%;" />
+<img src="gallery/bochs配置-6.PNG" alt="bochs配置-6" style="zoom:38%;" />
 
 start之后会出现两个窗口，一个是显示屏，一个是输入debug指令的。
 
-<img src="gallery\bochs配置-7.PNG" alt="bochs配置-7" style="zoom:38%;" />
+<img src="gallery/bochs配置-7.PNG" alt="bochs配置-7" style="zoom:38%;" />
 
 我们在debug窗口输入c，表示continue，让计算机模拟启动然后运行。
 
-<img src="gallery\bochs配置-8.PNG" alt="bochs配置-8" style="zoom:38%;" />
+<img src="gallery/bochs配置-8.PNG" alt="bochs配置-8" style="zoom:38%;" />
 
 为什么会出现“No bootable device”？这是因为计算机在启动后会加载MBR到0x7c00处运行，但在加载之前会检查MBR的最后两个字节是否为0x55,0xaa。如果是，则加载；否则认为是“No bootable device”。
 
@@ -833,7 +833,7 @@ nasm -f bin mbr.asm -o mbr.bin
 
 写入MBR后我们就可以启动bochs来模拟计算机启动了，启动后的效果如下。可以看到第一行已经输出“Hello World”。
 
-<img src="gallery\运行结果.PNG" alt="运行结果" style="zoom:38%;" />
+<img src="gallery/运行结果.PNG" alt="运行结果" style="zoom:38%;" />
 
 至此，我们的工作已经完成了。
 
