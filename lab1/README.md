@@ -282,7 +282,6 @@ cd mybusybox
 initramfs需要一个init程序，可以写一个简单的shell脚本作为init。用gedit打开文件`init`，复制入如下内容，保存退出。
 
 ```shell
-# cat init
 #!/bin/sh
 mount -t proc none /proc
 mount -t sysfs none /sys
