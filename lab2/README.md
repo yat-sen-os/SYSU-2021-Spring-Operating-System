@@ -767,7 +767,7 @@ dd if=mbr.bin of=hd.img bs=512 count=1 seek=0 conv=notrunc
 + `seek`表示越过输出文件中多少块之后再写入。
 + `conv=notrunc`表示不截断输出文件，如果不加上这个参数，那么硬盘在写入后多余部份会被截断。
 
-写入MBR后我们就可以启动bochs来模拟计算机启动了，命令如下。
+写入MBR后我们就可以启动qemu来模拟计算机启动了，命令如下。
 
 ```shell
 qemu-system-i386 -hda hd.img -serial null -parallel stdio 
@@ -929,7 +929,7 @@ TODO：debug常用指令和debug思路。
 
 15. 请复现Assignment。
 
-16. 请使用Assignment测试bochs的debug指令。
+16. 请使用Assignment测试gdb的debug指令。
 
 17. 请简要谈谈本次教程的不足之处。
 
