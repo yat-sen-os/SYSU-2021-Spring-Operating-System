@@ -23,7 +23,7 @@
 + 《Intel汇编语言程序设计》第1-8章
 + 《从实模式到保护模式》第1-8章
 
-希望使用 UEFI 结合 C++ 或 Rust 进行操作系统开发的同学，请参考[UEFI 的相关指引](https://gitee.com/nelsoncheung/sysu-2021-spring-operating-system/blob/dev/lab2/README.md)。下面的指引是基于 MBR 引导、汇编结合 C++ 进行开发的。
+希望使用 UEFI 结合 C++ 或 Rust 进行操作系统开发的同学，请参考[UEFI 的相关指引](https://gitee.com/nelsoncheung/sysu-2021-spring-operating-system/blob/dev/lab2/uefi.md)。下面的指引是基于 MBR 引导、汇编结合 C++ 进行开发的。
 
 # IA-32处理器
 
