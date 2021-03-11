@@ -96,7 +96,7 @@ end
 
 字符弹射程序。请编写一个字符弹射程序，其从点$(2,0)$处开始向右下角45度开始射出，遇到边界反弹，反弹后按45度角射出，方向视反弹位置而定。同时，你可以加入一些其他效果，如变色，双向射出等。注意，你的程序应该不超过510字节，否则无法放入MBR中被加载执行。静态示例效果如下，动态效果见视频`assignment/assignment-4-example.mp4`。(**Tips：18级的学长学姐都做过这个实验**。)
 
-<img src="C:/Users/NelsonCheung/Desktop/课程/TA/2021春季操作系统/release/lab2/gallery/bonus-1.PNG" alt="新建虚拟机14" style="zoom:30%;" />
+<img src="gallery/bonus-1.PNG" alt="新建虚拟机14" style="zoom:30%;" />
 
 # 实验概述
 
