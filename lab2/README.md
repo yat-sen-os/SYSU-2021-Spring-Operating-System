@@ -6,12 +6,97 @@
 
 # 实验要求
 
-> + DDL：
-> + 提交的内容：
+> + DDL：**2021.03.21 23:59**
+> + 提交的内容：将**4个assignment的代码**和**实验报告**放到**压缩包**中，命名为“**lab2-姓名-学号**”，并交到课程网站上[http://course.dds-sysu.tech/course/3/homework]。
 
 1. 实验不限语言， C/C++/Rust都可以。
 2. 实验不限平台， Windows、Linux和MacOS等都可以。
 3. 实验不限CPU， ARM/Intel/Risc-V都可以。
+
+## Assignment 1 MBR
+
+> 注意，assignment 1的寄存器请使用16位的寄存器。
+
+### 1.1
+
+复现example 1。说说你是怎么做的，并将结果截图。
+
+### 1.2
+
+请修改example 1的代码，使得MBR被加载到0x7C00后在$(12,12)$处开始输出你的学号。注意，你的学号显示的前景色和背景色必须和教程中不同。说说你是怎么做的，并将结果截图。
+
+## Assignment 2 实模式中断
+
+### 2.1
+
+请修改1.2的代码，**使用实模式下的中断来输出你的学号**，可以参考[https://blog.csdn.net/lindorx/article/details/83957903]。说说你是怎么做的，并将结果截图。
+
+### 2.2
+
+请探索实模式下的光标中断，**利用中断实现光标的位置获取和光标的移动**，可以参考[https://blog.csdn.net/lindorx/article/details/83957903]。说说你是怎么做的，并将结果截图。
+
+### 2.3
+
+在2.1和2.2的知识的基础上，探索实模式的键盘中断，**利用键盘中断实现键盘输入并回显**，可以参考[https://blog.csdn.net/deniece1/article/details/103447413]。关于键盘扫描码，可以参考[http://blog.sina.com.cn/s/blog_1511e79950102x2b0.html]。说说你是怎么做的，并将结果截图。
+
+## Assignment 3 汇编
+
+> + assignment 3的寄存器请使用32位的寄存器。
+> + 首先执行命令`sudo apt install gcc-multilib g++-multilib`安装相应环境。
+> + 你需要实现的代码文件在`assignment/student.asm`中。
+> + 编写好代码之后，在目录`assignment`下使用命令`make run`即可测试，不需要放到mbr中使用qemu启动。
+> + `a1`、`if_flag`、`my_random`等都是预先定义好的变量和函数，直接使用即可。
+> + 你可以修改`test.cpp`中的`student_setting`中的语句来得到你想要的`a1,a2`。
+> + 最后附上`make run`的截图，并说说你是怎么做的。
+
+### 3.1 分支逻辑的实现
+
+请将下列伪代码转换成汇编代码，并放置在标号`your_if`之后。
+
+```
+if a1 < 12 then
+	if_flag = a1 * 2 + 1
+else if a1 < 24 then
+	if_flag = (24 - a1) * a1
+else
+	if_flag = a1 << 4
+end
+```
+
+### 3.2 循环逻辑的实现
+
+请将下列伪代码转换成汇编代码，并放置在标号`your_while`之后。
+
+```
+while a2 >= 12 then
+	call my_random        // my_random将产生一个随机数放到eax中返回
+	while_flag[a2 - 12] = eax
+	--a2
+end
+```
+
+### 3.3 函数的实现
+
+请编写函数`your_function`并调用之，函数的内容是遍历字符数组`string`。
+
+```
+your_function:
+	for i = 0; string[i] != '\0'; ++i then
+		popad
+		push string[i] to stack
+		call print_a_char
+		pop stack
+		popad
+	end
+	return
+end
+```
+
+## Assignment 4 汇编小程序
+
+字符弹射程序。请编写一个字符弹射程序，其从点$(2,0)$处开始向右下角45度开始射出，遇到边界反弹，反弹后按45度角射出，方向视反弹位置而定。同时，你可以加入一些其他效果，如变色，双向射出等。注意，你的程序应该不超过510字节，否则无法放入MBR中被加载执行。静态示例效果如下，动态效果见视频`assignment/assignment-4-example.mp4`。(**Tips：18级的学长学姐都做过这个实验**。)
+
+<img src="C:/Users/NelsonCheung/Desktop/课程/TA/2021春季操作系统/release/lab2/gallery/bonus-1.PNG" alt="新建虚拟机14" style="zoom:30%;" />
 
 # 实验概述
 
@@ -635,7 +720,7 @@ my_function:
 
 > 为什么MBR是被加载到0x7c00，而不是加载到0x0000？有兴趣的同学可以参考[Why BIOS loads MBR into 0x7C00 in x86 ?](https://www.glamenv-septzen.net/en/view/6)
 
-# Assignment 1 Hello World
+# Example 1 Hello World
 
 纸上得来终觉浅，绝知此事要躬行。我们现在终于可以开始写汇编代码了，我们需要做的任务是在MBR被加载到内存地址0x7c00后，向屏幕输出蓝色的Hello World。在输出字符之前，我们需要了解计算机是如何将字符显示在屏幕上的。
 
@@ -841,7 +926,7 @@ target remote:1234
 
 同学们注意体会在MBR处debug和在gdb教程中给出的debug的过程的区别。在每次启动过程中，我们都需要手动的打开qemu、gdb窗口，然后再在gdb窗口中输入一大堆的初始化命令，非常麻烦。那么，我们是否可以仅使用一条命令就可以自动上述过程呢？然后我们便可以开始debug。答案是有的，秘诀就是使用makefile和将gdb命令写到一个文件中。至于怎么做的，同学们可以自行探索，我们在下一节中揭晓。
 
-# 课后练习
+# 课后思考题（不需要完成）
 
 1. 请你谈谈对多层语言模型的理解，即为什么需要有机器语言、汇编语言和高级语言三层？
 
