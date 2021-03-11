@@ -82,7 +82,7 @@ end
 ```
 your_function:
 	for i = 0; string[i] != '\0'; ++i then
-		popad
+		pushad
 		push string[i] to stack
 		call print_a_char
 		pop stack
