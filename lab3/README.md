@@ -71,7 +71,7 @@ LBA的全称是Logical Block Addressing, 逻辑块寻址模式。对于一个硬
 
 1. **设置起始的逻辑扇区号**。由于扇区的读写是连续的，因此只要给出第一个扇区的编号就可以了。由于我们这里使用的是LBA28（28表示使用28位来表示逻辑扇区的编号）的方式读取硬盘，因此没有一个16位的寄存器能够容纳下28位的地址。此时，逻辑扇区号是被分成4段写入端口的。其中，逻辑扇区的0\~7位被写入0x1F3端口，8\~15位被写入0x1F4端口，16\~23位被写入0x1F5端口，最后4位被写入0x1F6端口的低4位。注意0x1F6的8个位表示如下。
 
-   <img src="gallery\0x1f6端口.PNG" alt="0x1f6端口" style="zoom:38%;" >
+   <img src="gallery/0x1f6端口.PNG" alt="0x1f6端口" style="zoom:38%;" >
 
    前面讲过，我们使用的是LBA模式，只使用主硬盘。因此0x1f6的高4位应该是0xE。
 
@@ -81,7 +81,7 @@ LBA的全称是Logical Block Addressing, 逻辑块寻址模式。对于一个硬
 
 4. **等待其他读写操作完成**。我们在第3步请求硬盘读的时候，可能硬盘在处理其他操作。因此我们需要等待其他读写操作完成后才能开始本次读写操作。硬盘的状态可以从0x1F7读入，读到的8个状态位如下所示。
 
-   <img src="gallery\0x1f7.PNG" alt="0x1f7" style="zoom:38%;" />
+   <img src="gallery/0x1f7.PNG" alt="0x1f7" style="zoom:38%;" />
 
    其他操作完成的标志是第7位为0，第3位为1，第0位为0。
 
@@ -166,7 +166,7 @@ asm_read_hard_disk:
 
 CPU需要知道当前运行中程序的段地址空间信息，然后才能执行地址保护，阻止程序越界访问。段地址空间信息是通过段描述符(segment descriptor)来给出的。段描述符中包含了段基地址(段的起始地址)、段界限(段的长度)等，共计64字节，如下所示。上面一行是高32字节、下面一行是低32字节。
 
-<img src="gallery\段描述符.PNG" alt="段描述符" style="zoom:35%;" />
+<img src="gallery/段描述符.PNG" alt="段描述符" style="zoom:35%;" />
 
 我们来具体看下段描述符中各个位的具体含义。
 
@@ -244,7 +244,7 @@ $$
 
 保护模式下的段寄存器依然是 16 位，但其中保存的不再是段地址，因为段地址保存在段描述符中。段寄存器保存的内容是段选择子(segment selector)。在段选择子是用来告诉CPU寻址时使用哪个段。所有的段都会被保存在全局描述符表(GDT)中，实际上段选择子是全局描述符表的索引，类似数组访问`array[i]`中的`i`，但段选择子中还会包含其他信息，如下所示。
 
-<img src="gallery\段选择子.PNG" alt="段选择子" style="zoom:45%;" />
+<img src="gallery/段选择子.PNG" alt="段选择子" style="zoom:45%;" />
 
 + 第15-3位是段描述符的索引，表示选择子指向的段描述符是段描述符表中的第几个，编号从 0 开始。  
 + 第2位用来指示描述符表，0表示描述符表是 GDT。  
@@ -271,7 +271,7 @@ $$
 
 GDT实际上是一个段描述符数组，保存在内存中。GDT的起始位置和大小由我们来确定，保存在寄存器GDTR中，GDTR的内容如下所示。
 
-<img src="gallery\GDTR.PNG" alt="GDTR" style="zoom:38%;" />
+<img src="gallery/GDTR.PNG" alt="GDTR" style="zoom:38%;" />
 
 全局描述符边界实际上是GDT的界限，和上面的段界限相同。段描述符的数量是有限的，如下所示。
 $$
@@ -473,7 +473,7 @@ dd if=mbr.bin of=hd.img bs=512 count=1 seek=0 conv=notrunc
 
 使用bochs运行即可，示例效果如下。
 
-<img src="gallery\bootloader.PNG" alt="bootloader" style="zoom:38%;" />
+<img src="gallery/bootloader.PNG" alt="bootloader" style="zoom:38%;" />
 
 # Example 2：进入保护模式
 
@@ -585,7 +585,7 @@ CODE_SELECTOR equ 0x20
 
 我们以代码段选择子为例来解释段选择子的含义，段选择子的结构如下。
 
-<img src="gallery\段选择子.PNG" alt="段选择子" style="zoom:45%;" />
+<img src="gallery/段选择子.PNG" alt="段选择子" style="zoom:45%;" />
 
 + 代码段描述符是GDT中第4个描述符，因此高13位为4。
 + TI=0表示GDT，第2位为0。
@@ -593,7 +593,7 @@ CODE_SELECTOR equ 0x20
 
 因此代码段选择子为0x20。此时，GDT已经设置完毕，我们现在结合段描述符的结构研究下代码段的内存和具体含义，段描述符如下所示。
 
-<img src="gallery\段描述符.PNG" alt="段描述符" style="zoom:38%;" />
+<img src="gallery/段描述符.PNG" alt="段描述符" style="zoom:38%;" />
 
 对于代码段描述符，描述符高32位为0x00cf9800，低32位为0x0000ffff，因此各个部分含义如下。
 
@@ -820,11 +820,11 @@ add bx, 512
 
 使用和example 1相同的命令，我们编译汇编代码，运行结果如下。
 
-<img src="gallery\进入保护模式.PNG" alt="进入保护模式" style="zoom:38%;" />
+<img src="gallery/进入保护模式.PNG" alt="进入保护模式" style="zoom:38%;" />
 
 我们使用`info registers`查看寄存器，可以看到段寄存器的内容变成了段选择子。
 
-<img src="gallery\保护模式段寄存器.PNG" alt="保护模式段寄存器" style="zoom:38%;" />
+<img src="gallery/保护模式段寄存器.PNG" alt="保护模式段寄存器" style="zoom:38%;" />
 
 > 本节的内容有些多，同学们注意理解和消化。
 
