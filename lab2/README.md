@@ -764,7 +764,7 @@ $$
 现在，我们来正式编写MBR的代码，在MBR被加载到内存地址0x7c00后，向屏幕输出蓝色的Hello World，代码如下所示。
 
 ```asm
-org 7c00
+org 0x7c00
 [bits 16]
 xor ax, ax ; eax = 0
 ; 初始化段寄存器, 段地址全部设为0
