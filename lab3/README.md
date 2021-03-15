@@ -2,16 +2,39 @@
 
 > 世上只有两种编程语言：一种是总是被人骂的，一种是从来没人用的。
 
-# TODO
-
-+ makefile的解释。
-+ 实验题目。
-
 # 实验要求
 
 > + DDL：
 > + 提交的内容：
-> + **材料中的Example的代码放置在`src`目录下**。
+> + **材料的Example的代码放置在`src`目录下**。
+
+1. 实验不限语言， C/C++/Rust都可以。
+2. 实验不限平台， Windows、Linux和MacOS等都可以。
+3. 实验不限CPU， ARM/Intel/Risc-V都可以。
+
+## Assignment 1
+
+### 1.1
+
+复现Example 1，说说你是怎么做的并提供结果截图。
+
+### 1.2
+
+在Example1中，我们使用了LBA28的方式来读取硬盘。此时，我们只要给出逻辑扇区号即可，但需要手动去读取I/O端口。然而，BIOS提供了实模式下读取硬盘的中断，其不需要关心具体的I/O端口，只需要给出逻辑扇区号对应的磁头（Heads）、扇区（Sectors）和柱面（Cylinder）即可，又被称为CHS模式。现在，同学们需要将LBA28读取硬盘的方式换成CHS读取，同时给出逻辑扇区号向CHS的转换公式。最后说说你是怎么做的并提供结果截图，可以参考《于渊：一个操作系统的实现2》P183-184。
+
+## Assignment 2
+
+### 2.1
+
+复现Example 2，使用gdb或其他debug工具在进入保护模式的4个重要步骤上设置断点，并结合代码、寄存器的内容等来分析这4个步骤，最后附上结果截图。gdb的使用可以参考lab2的debug部份。
+
+### 2.2
+
+进入保护模式后，使用gdb查看GDT的内容，分析gdb的输出各代表什么，并效仿Example 2分析数据段、栈段和视频段描述符。
+
+## Assignment 3
+
+改造“Lab2-Assignment 4”为32位代码，在进入保护模式后，小球弹射程序能够在屏幕的4块等分的区域上交替执行，示例结果见视频。
 
 # 参考资料
 
@@ -19,13 +42,15 @@
 
 # 实验概述
 
-在本节中，同学们将会学习到如何从实模式跳转到保护模式，然后在平坦模式下运行32位程序。同时，同学们将学习到如何使用I/O端口和硬件交互，为后面保护模式编程打下基础。
+在上一节中，同学们已经学习了x86汇编的相关内容、初步了解计算机的启动过程并在16位的实模式环境下进行编程。
+
+在本节中，同学们将会学习到如何从16位的实模式跳转到32位的保护模式，然后在平坦模式下运行32位程序。同时，同学们将学习到如何使用I/O端口和硬件交互，为后面保护模式编程打下基础。
 
 # 突破512字节的限制
 
-计算机在启动的最后只会自动加载MBR（512字节）到内存中运行。512字节能够完成的工作非常有限，因此在实际的应用中，MBR只是负责定义了一些基本信息如磁盘大小、扇区大小等。为了运行操作系统，我们需要将操作系统内核加载到内存中。显然，MBR无法胜任这项工作。为了突破512字节的限制，在操作系统内核加载前，MBR会加载bootloader(启动加载器)到内存中。此时，bootloader并无512字节的限制。此后，控制权将由MBR传递到bootloader，bootloader负责完成从实模式跳转到保护模式、加载操作系统内核等工作。
+计算机在启动的最后只会自动加载MBR（512字节）到内存中运行。然而，512字节能够完成的工作非常有限，因此在实际的应用中，MBR只是负责定义了一些基本信息如磁盘大小、扇区大小等。
 
-> 同学们做了lab2-Assignment 4后，就不难理解512字节实在是难以让同学们的编程才华得到充分地舒展。
+在运行操作系统前，我们需要将操作系统内核程序从外存加载到内存中。显然，MBR无法胜任这项工作。为了突破512字节的限制，在操作系统内核加载前，我们的MBR不再是输出“Hello World”，而是将一段程序从外存加载到内存中。此时，这段程序的大小并无512字节的限制。也就是说，在内存富余的前提下，这段程序可以尽可能地大。我们通过这段程序来完成MBR无法完成的工作，例如从实模式跳转到保护模式、加载操作系统内核等。由于这段程序是为了加载操作系统内核而服务的，因此被称为bootloader（启动加载器）。
 
 无论是MBR还是bootloader，其最开始都是存放在磁盘上的，也就是外存。而MBR和bootloader只有被加载到内存中才可以被执行，除了MBR外，计算机是不会去外存找程序执行的。MBR是在计算机启动时被计算机自动加载到0x7C00处执行。此后，计算机的任何行为都由我们的程序来控制。也就是说，我们需要自己从外存中加载程序到内存中运行。因此，我们首先来学习如何读写硬盘。
 
@@ -70,7 +95,7 @@ LBA的全称是Logical Block Addressing, 逻辑块寻址模式。对于一个硬
 
 使用LBA读取硬盘的方式如下。
 
-1. **设置起始的逻辑扇区号**。由于扇区的读写是连续的，因此只要给出第一个扇区的编号就可以了。由于我们这里使用的是LBA28（28表示使用28位来表示逻辑扇区的编号）的方式读取硬盘，因此没有一个16位的寄存器能够容纳下28位的地址。此时，逻辑扇区号是被分成4段写入端口的。其中，逻辑扇区的0\~7位被写入0x1F3端口，8\~15位被写入0x1F4端口，16\~23位被写入0x1F5端口，最后4位被写入0x1F6端口的低4位。注意0x1F6的8个位表示如下。
+1. **设置起始的逻辑扇区号**。由于扇区的读写是连续的，因此只要给出第一个扇区的编号就可以了。由于我们这里使用的是LBA28（28表示使用28位来表示逻辑扇区的编号）的方式读取硬盘，没有一个IO端口能够容纳下28位的地址。此时，逻辑扇区号是被分成4段写入端口的。其中，逻辑扇区的0\~7位被写入0x1F3端口，8\~15位被写入0x1F4端口，16\~23位被写入0x1F5端口，最后4位被写入0x1F6端口的低4位。注意0x1F6的8个位表示如下。
 
    <img src="gallery/0x1f6端口.PNG" alt="0x1f6端口" style="zoom:38%;" >
 
@@ -214,7 +239,7 @@ $$
 $$
 计算机在寻址过程使用的是物理地址，但是，同学们在前面的文字中看到的都是线性地址，这是为什么呢？这和我们后面需要实现二级分页机制有关。
 
-我们在指令中给出的都是偏移地址，偏移地址和段线性基地址相加后得到线性地址，线性地址通过地址变换部件MMU后得到实际的物理地址。也就是说，线性地址和物理地址的关系如下。
+在保护模式下，我们在指令中给出的都是偏移地址，偏移地址和段线性基地址相加后得到线性地址，线性地址通过地址变换部件MMU后得到实际的物理地址。也就是说，线性地址和物理地址的关系如下。
 $$
 物理地址=f(线性地址)
 $$
@@ -241,7 +266,7 @@ $$
 
 > 简单来说，32位寄存器就是在16位寄存器的名字上加上字符e，如ax -> eax。
 
-我们知道，由于实模式需要用16位的寄存器寻址20位的地址空间，我们不得不使用段地址: 偏移地址的方式来访问内存。其中，此时线性地址 = 段地址 << 4 + 偏移地址。而现在引入了保护模式，地址空间和寄存器都是32位的，我们已经可以随心所欲地寻址4G的内存空间，段寄存器看似没有再使用的必要。在上面提到，保护模式最大的特点就是引入了段间保护机制，而将内存划分为一个一个的段也方便于操作系统实现有效的内存管理和调度机制。所以，在保护模式下，段寄存器依然在使用。但是相较于实模式，保护模式下的段寄存器的使用发生了变化。
+我们知道，由于实模式需要用16位的寄存器寻址20位的地址空间，我们不得不使用“段地址: 偏移地址”的方式来访问内存。其中，“线性地址 = 段地址 << 4 + 偏移地址”。而现在引入了保护模式，地址空间和寄存器都是32位的，我们已经可以随心所欲地寻址4G的内存空间，段寄存器看似没有再使用的必要。在上面提到，保护模式最大的特点就是引入了段间保护机制，而将内存划分为一个一个的段也方便于操作系统实现有效的内存管理和进程调度机制。所以，在保护模式下，段寄存器依然在使用。但是相较于实模式，保护模式下的段寄存器的使用发生了本质的变化。
 
 保护模式下的段寄存器依然是 16 位，但其中保存的不再是段地址，因为段地址保存在段描述符中。段寄存器保存的内容是段选择子(segment selector)。在段选择子是用来告诉CPU寻址时使用哪个段。所有的段都会被保存在全局描述符表(GDT)中，实际上段选择子是全局描述符表的索引，类似数组访问`array[i]`中的`i`，但段选择子中还会包含其他信息，如下所示。
 
@@ -253,7 +278,7 @@ $$
 
 > TI=1表示描述符表是LDT(Local Descriptor Table，局部描述符表)，但我们不使用LDT。
 
-保护模式下的寻址依然通过段地址和偏移地址的方式来寻址，此时线性地址 = 段地址 + 偏移地址，表示为选择子: 偏移地址。寻址过程如下，CPU先通过选择子在描述符表中找到段描述符，然后得到段线性基地址，最后将段线性基地址加上偏移地址便得到线性地址。
+保护模式下的寻址依然通过段地址和偏移地址的方式来寻址，此时线性地址 = 段地址 + 偏移地址，表示为“选择子:偏移地址”。在保护模式下，CPU先通过选择子在描述符表中找到段描述符，然后得到段线性基地址，最后将段线性基地址加上偏移地址便得到线性地址。
 
 为了加快地址变换过程，每个段寄存器都会有一个64位的不可见的部分，这部分被称为描述符高速缓存器。当我们将选择子送入段寄存器时，CPU会自动从描述符表中加载对应的段描述符到描述符高速缓存器中。此后，当需要使用段寄存器时，CPU会直接从描述符高速缓存器中取出相应的内容，无需重新在描述符表中查找对应的段描述符。
 
@@ -299,9 +324,7 @@ or eax, 1
 mov cr0, eax   ; 设置 PE 位
 ```
 
- 上面已经打开保护模式，我们还差最后一步，将代码段选择子送入cs寄存器。前面已经提到，段寄存器的使用保护模式与实模式不同，我们需要将代码段的选择子放入段寄存器cs才可以正确执行保护模式的代码，cs无法直接使用mov指令修改，我们需要借助于jmp 指令。
-
-> 在一些教程中，其将jmp指令称为保护模式的开关，然后将这个为过程称为从实模式跳转进入保护模式。但本教程认为这样的描述是无法给予初学者直观的理解的，反而有些故弄玄虚的味道。因此本教程坚持认为cr0寄存器的PE位才是真正的保护模式开关。至于从实模式跳转进入保护模式只是一种形象的说法。
+ 上面已经打开保护模式，我们还差最后一步，将代码段选择子送入cs寄存器。前面已经提到，段寄存器的使用保护模式与实模式不同，我们需要将代码段的选择子放入段寄存器cs才可以正确执行保护模式的代码，cs无法直接使用mov指令修改，我们需要借助于jmp指令。执行完jmp指令后，我们便正式进入了保护模式。
 
 上面的内容知识点有些多，我们接下来通过两个具体的例子来加深对知识点的理解。
 
@@ -310,7 +333,14 @@ mov cr0, eax   ; 设置 PE 位
 
 # Example 1：bootloader的加载
 
-在第一个例子中，我们将lab2中输出Hello World部份的代码放入到bootloader中，然后在MBR中加载bootloader，并跳转到bootloader处输出hello world。
+在第一个例子中，我们将lab2中输出Hello World部份的代码放入到bootloader中，然后在MBR中加载bootloader到内存，并跳转到bootloader的起始地址执行。
+
+目前，我们的内存地址安排如下，bootloader被安排在MBR之后，预留5个扇区的空间。
+
+| name       | start  | length          | end    |
+| ---------- | ------ | --------------- | ------ |
+| MBR        | 0x7c00 | 0x200(512B)     | 0x7e00 |
+| bootloader | 0x7e00 | 0xa00(512B * 5) | 0x8800 |
 
 我们先新建一个文件`bootloader.asm`，然后将lab2的`mbr.asm`中输出Hello World部份的代码，放入`bootloader.asm`，`bootloader.asm`如下所示。
 
@@ -319,42 +349,23 @@ org 0x7e00
 [bits 16]
 mov ax, 0xb800
 mov gs, ax
-
 mov ah, 0x03 ;青色
-mov al, 'b'
-mov [gs:2 * 0], ax
-
-mov al, 'o'
-mov [gs:2 * 1], ax
-
-mov al, 'o'
-mov [gs:2 * 2], ax
-
-mov al, 't'
-mov [gs:2 * 3], ax
-
-mov al, 'l'
-mov [gs:2 * 4], ax
-
-mov al, 'o'
-mov [gs:2 * 5], ax
-
-mov al, 'a'
-mov [gs:2 * 6], ax
-
-mov al, 'd'
-mov [gs:2 * 7], ax
-
-mov al, 'e'
-mov [gs:2 * 8], ax
-
-mov al, 'r'
-mov [gs:2 * 9], ax
-
+mov ecx, bootloader_tag_end - bootloader_tag
+xor ebx, ebx
+mov esi, bootloader_tag
+output_bootloader_tag:
+    mov al, [esi]
+    mov word[gs:bx], ax
+    inc esi
+    add ebx,2
+    loop output_bootloader_tag
 jmp $ ; 死循环
+
+bootloader_tag db 'run bootloader'
+bootloader_tag_end:
 ```
 
-然后我们在`mbr.asm`处放入使用LBA模式读取硬盘的代码，然后加载bootloader到地址0x7e00。
+然后我们在`mbr.asm`处放入使用LBA模式读取硬盘的代码，然后在MBR中加载bootloader到地址0x7e00。
 
 ```asm
 org 0x7c00
@@ -369,11 +380,14 @@ mov gs, ax
 
 ; 初始化栈指针
 mov sp, 0x7c00
-
 mov ax, 1                ; 逻辑扇区号第0~15位
 mov cx, 0                ; 逻辑扇区号第16~31位
 mov bx, 0x7e00           ; bootloader的加载地址
-call asm_read_hard_disk  ; 读取硬盘
+load_bootloader:
+    call asm_read_hard_disk  ; 读取硬盘
+    inc ax
+    cmp ax, 5
+    jle load_bootloader
 jmp 0x0000:0x7e00        ; 跳转到bootloader
 
 jmp $ ; 死循环
@@ -438,7 +452,9 @@ times 510 - ($ - $$) db 0
 db 0x55, 0xaa
 ```
 
-由于在本例中，bootloader很小，我们读取1个扇区也足够，但是直接在MBR的代码中指定bootloader的大小是危险的，我们在第二个例子中再讨论这个问题。将bootloader读取到起始位置为0x7e00的内存后，我们执行远跳转跳转到0x7e00。注意，我们现在是在实模式下，0x0000:0x7e00表示段地址为0x0000, 偏移地址为0x7e00。执行这条语句实际上等价于以下过程。
+由于在我们的实验中，我们假设bootloader不会超过5个扇区。但是，直接在MBR的代码中指定bootloader的大小是危险的，我们在第二个例子中再讨论这个问题。
+
+将bootloader读取到起始位置为0x7e00的内存后，我们执行远跳转到0x7e00。注意，我们现在是在实模式下，`0x0000:0x7e00`表示段地址为0x0000, 偏移地址为0x7e00。执行这条语句实际上等价于以下过程。其中，符号`:=`表示赋值。
 
 ```
 cs := 0x0000
@@ -458,7 +474,7 @@ ip := ip + 0x7e00
 cs 不变
 ```
 
-然后我们编译`bootloader.asm`，写入硬盘起始编号为1的扇区。
+然后我们编译`bootloader.asm`，写入硬盘起始编号为1的扇区，共有5个扇区。
 
 ```
 nasm -f bin bootloader.asm -o bootloader.bin
@@ -472,25 +488,25 @@ nasm -f bin mbr.asm -o mbr.bin
 dd if=mbr.bin of=hd.img bs=512 count=1 seek=0 conv=notrunc
 ```
 
-使用bochs运行即可，示例效果如下。
+使用qemu运行即可，示例效果如下。
 
-<img src="gallery/bootloader.PNG" alt="bootloader" style="zoom:38%;" />
+<img src="gallery/bootloader.PNG" alt="bootloader" style="zoom:50%;" />
 
 # Example 2：进入保护模式
 
-在第二个例子中，我们根据前面“保护模式-进入保护模式”的描述，在bootloader中进入保护模式，并在进入保护模式后在显示屏上输出‘protect mode’。
+在第二个例子中，我们根据前面“进入保护模式”的描述，在bootloader中进入保护模式，并在进入保护模式后在显示屏上输出‘protect mode’。
 
 在进入保护模式之前，我们先对我们的内存地址进行规划。
 
-| name       | start  | length          | end    |
+| Name       | Start  | Length          | End    |
 | ---------- | ------ | --------------- | ------ |
 | MBR        | 0x7c00 | 0x200(512B)     | 0x7e00 |
 | bootloader | 0x7e00 | 0xa00(512B * 5) | 0x8800 |
 | GDT        | 0x8800 | 0x80(8B * 16)   | 0x8880 |
 
-MBR被自动加载到0x7c00，长度512字节，因此结束于0x7e00。我们的bootloader放置在MBR之后，长度限制在5个扇区，因此结束于0x8800。虽然GDT中可放入8192个描述符，但我们并不打算定义如此多的段，因此我使用的段描述符很少，不妨记为16个。
+MBR被自动加载到0x7c00，长度512字节，因此结束于0x7e00。我们的bootloader放置在MBR之后，长度限制在5个扇区，因此结束于0x8800。虽然GDT中可放入8192个描述符，但我们并不打算定义如此多的段，实际上我们使用的段不会超过16个。
 
-我们将上述常量定义在一个独立的文件`boot.inc`中，如下所示。
+我们不妨将上述常量定义在一个独立的文件`boot.inc`中，如下所示。
 
 ```asm
 ; 常量定义区
@@ -506,18 +522,20 @@ LOADER_START_ADDRESS equ 0x7e00
 GDT_START_ADDRESS equ 0x8800
 ```
 
-其中，equ是汇编伪指令。例如，编译器会在编译时将`LOADER_SECTOR_COUNT`出现的地方替换成`5`，`LOADER_SECTOR_COUNT equ 5`不会对应任何的二进制指令，即不会出现在最终的bin格式文件中。
+其中，`equ`是汇编伪指令。例如，编译器会在编译时将`LOADER_SECTOR_COUNT`出现的地方替换成`5`，`LOADER_SECTOR_COUNT equ 5`不会对应任何的二进制指令，即不会出现在最终的bin格式文件中。
 
 >  在操作系统内核设计的过程中，内存规划是一件令人苦恼的事情。从上面的例子可以看到，bootloader紧跟在MBR后面，GDT紧跟在bootloader后面，看起来非常紧凑。但是，只要其中一个发生变化，那么可能我们又要重新规划内存。也就是说，没有一种内存规划方案是完美的。
 
-规划好内存后，我们就准备进入保护模式。回忆以下我们进入保护模式的步骤。
+规划好内存后，我们就准备进入保护模式。回忆一下我们进入保护模式的步骤。
 
 1. **准备GDT，用lgdt指令加载GDTR信息**。
 2. **打开第21根地址线**。
 3. **开启cr0的保护模式标志位**。
 4. **远跳转，进入保护模式**。 
 
-我们下面分步来看，完整代码放置在`src/example-2/bootloader.asm`下。在前面我们已经实现了bootloader的加载，我们此时便在bootloader中跳转到保护模式。首先，我们需要定义段描述符，我们有代码段描述符、数据段描述符、栈段描述符和视频段描述符。
+我们下面分步来看，完整代码放置在`src/example-2/bootloader.asm`下。
+
+在前面，我们已经实现了bootloader的加载，我们需要在bootloader中跳转到保护模式。首先，我们需要定义段描述符，我们有代码段描述符、数据段描述符、栈段描述符和视频段描述符。
 
 由于保护模式下的寄存器是32位寄存器，保护模式的地址线也是32位。因此，我们单纯使用偏移地址也可以访问保护模式的4GB空间。即便如此，前面已经讲过，段的存在是为了让CPU执行段保护，阻止程序越界访问。但是，我们在后面的实验中会实现二级分页机制，此时页保护也可以阻止程序越界访问。也就是说，我们并不需要将程序分为一个个的段。为了简化地址的访问，我们让所有的程序运行在同一个段中，这个段的地址空间大小是4GB，也就是全部的地址空间。此时，我们让代码段描述符、数据段描述符和栈段描述符中的段线性基地址为0，那么偏移地址和线性地址就完全相同，这大大简化了编程的逻辑。这种内存访问模式被称为平坦模式。
 
@@ -529,6 +547,7 @@ GDT_START_ADDRESS equ 0x8800
 %include "boot.inc"
 org 0x7e00
 [bits 16]
+... ; 输出bootloader_tag代码，此处省略
 ;空描述符
 mov dword [GDT_START_ADDRESS+0x00],0x00
 mov dword [GDT_START_ADDRESS+0x04],0x00  
@@ -666,27 +685,22 @@ mov eax, VIDEO_SELECTOR
 mov gs, eax
 ```
 
-最后，我们输出“in the protect mode”。
+最后，我们输出“enter protect mode”。
 
 ```asm
-mov ecx, 19
-xor ebx, ebx
-xor esi, esi
+mov ecx, protect_mode_tag_end - protect_mode_tag
+mov ebx, 80 * 2
+mov esi, protect_mode_tag
 mov ah, 0x3
-output_string:
-    mov al, [bx+string]
-    mov word[gs:si], ax
-    add esi, 2
-    inc ebx
-    loop output_string
-
-jmp $ ; 死循环
-```
-
-其中，`string`的定义如下。
-
-```assembly
-string db 'in the protect mode'
+output_protect_mode_tag:
+    mov al, [esi]
+    mov word[gs:ebx], ax
+    add ebx, 2
+    inc esi
+    loop output_protect_mode_tag
+ ... ; 省略
+protect_mode_tag db 'enter protect mode'
+protect_mode_tag_end:
 ```
 
 至此，我们差不多已经完成，但我们需要改造下MBR。如下所示。
@@ -821,13 +835,76 @@ add bx, 512
 
 使用和example 1相同的命令，我们编译汇编代码，运行结果如下。
 
-<img src="gallery/进入保护模式.PNG" alt="进入保护模式" style="zoom:38%;" />
+<img src="gallery/进入保护模式.PNG" alt="进入保护模式" style="zoom:50%;" />
 
-我们使用`info registers`查看寄存器，可以看到段寄存器的内容变成了段选择子。
+在gdb下，我们使用`info registers`查看寄存器，可以看到段寄存器的内容变成了段选择子。
 
-<img src="gallery/保护模式段寄存器.PNG" alt="保护模式段寄存器" style="zoom:38%;" />
+<img src="gallery/保护模式段寄存器.PNG" alt="保护模式段寄存器" style="zoom:50%;" />
 
-> 本节的内容有些多，同学们注意理解和消化。
+至此，我们已经完成了本次实验的全部内容，同学们注意仔细体会。
+
+# Makefile的使用（预告）
+
+在Example 2中，我们首先需要使用以下两条命令编译`mbr.asm`，`bootloader.asm`为二进制文件。
+
+```shell
+nasm -f bin mbr.asm -o mbr.bin
+nasm -f bin bootloader.asm -o bootloader.bin
+```
+
+然后写入`hd.img`。
+
+```shell
+dd if=mbr.bin of=hd.img bs=512 count=1 seek=0 conv=notrunc
+dd if=bootloader.bin of=hd.img bs=512 count=5 seek=1 conv=notrunc
+```
+
+最后使用qemu执行。
+
+```shell
+qemu-system-i386 -hda hd.img -serial null -parallel stdio 
+```
+
+如果要使用gdb，则会涉及更多的命令。在大多数情况下，我们编写的程序不一定会一次就成功，需要反复多次地debug。如果我们每做一次调整，就要输入上面一大堆命令，这无疑会大大降低我们的开发效率。那么，有没有可能输入尽可能少的命令就能达到相同的效果呢？答案是有的，就是把上面的命令都写入到一个文件中，然后使用命令`make`就能让系统顺序执行预先定义的命令。这个文件被称为Makefile，Makefile在后面将成为编译我们操作系统代码的强有力工具，能够大大提高我们的开发效率。同学们已经在lab2-assignment 3中已经用过了makefile。关于makefile的学习，同学们可以参考[(http://c.biancheng.net/makefile/]。
+
+此时，example-2的makefile的简单示例如下。
+
+```makefile
+run:
+	@qemu-system-i386 -hda hd.img -serial null -parallel stdio 
+debug:
+	@qemu-system-i386 -s -S -hda hd.img -serial null -parallel stdio &
+	@sleep 1
+	@gnome-terminal -e "gdb -q -x gdbinit"
+build:
+	@nasm -f bin mbr.asm -o mbr.bin
+	@nasm -f bin bootloader.asm -o bootloader.bin
+	@dd if=mbr.bin of=hd.img bs=512 count=1 seek=0 conv=notrunc
+	@dd if=bootloader.bin of=hd.img bs=512 count=5 seek=1 conv=notrunc
+clean:
+	@rm *.bin
+```
+
+在Terminal输入不同的make命令的执行结果不同，如下所示。
+
++ `make`或`make run`。使用qemu启动`hd.img`，在此命令执行前应该执行`make build`。
++ `make debug`。启动qemu并开启gdb调试。
++ `make build`。编译代码并写入`hd.img`。
++ `make clean`。清除当前文件夹下以`.bin`结尾的文件。
+
+值得注意的是，gdb的命令也可以预先写入到文件中，在启动gdb后自动加载执行，例如我们把gdb的初始化命令写入文件`gdbinit`中，如下所示。
+
+```
+target remote:1234
+set disassembly-flavor intel
+set architecture i386
+```
+
+当gdb启动后，gdb就会自动连接qemu，将反汇编的代码格式设置为intel风格，最后设置运行代码的处理架构为`i386`。注意，如果你在16位的环境下debug，处理器架构需要设置为`i8086`，即
+
+```
+set architecture i8086
+```
 
 # 课后思考题（不需要完成）
 
@@ -854,33 +931,11 @@ add bx, 512
 
 6. 什么是线性地址？线性地址和物理地址的区别是什么？
 
-7. 请复现assignment 1，将bootloader的输出改成你的“姓+学号”，例如我输出“cheung18340211”或“zhang18340211”(cheung是粤语，等同于普通话zhang)。
+7. 请复现assignment 1，将bootloader的输出改成你的“姓+学号”，例如某TA输出“cheung18340211”或“zhang18340211”(cheung是粤语，等同于普通话zhang)。
 
 8. 什么是`equ`指令。
 
-9. 请仿照代码段描述符的例子来解释assignment 2中的数据段描述符、栈段描述符和视频段描述符。
-
-10. 初始化GDTR中，为什么要在数据标号前加上`BOOTLOADER_START_ADDRESS`。(tips: 回忆第一章的bonus-2)
-
-    ```asm
-    ;初始化描述符表寄存器GDTR
-    mov word [pgdt + LOADER_START_ADDRESS], 39      ;描述符表的界限   
-    lgdt [pgdt + LOADER_START_ADDRESS]
-    ```
-
-    为什么不使用下面的指令。
-
-    ```asm
-    ;初始化描述符表寄存器GDTR
-    mov word [pgdt], 39      ;描述符表的界限   
-    lgdt [pgdt]
-    ```
-
-    
-
-11. 请仿照代码段选择子的例子来解释assignment 2中的数据段选择子、栈段选择子和视频段选择子。
-
-12. 请解释进入保护模式后`sreg`输出的内容。
+9. 请仿照代码段描述符的例子来解释Example 2中的数据段描述符、栈段描述符和视频段描述符。
 
 13. 请用自己的话从汇编的角度解释C/C++的函数调用过程。
 

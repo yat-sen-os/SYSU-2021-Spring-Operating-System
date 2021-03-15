@@ -2,36 +2,17 @@ org 0x7e00
 [bits 16]
 mov ax, 0xb800
 mov gs, ax
-
-mov ah, 0x03 ;蓝色
-mov al, 'b'
-mov [gs:2 * 0], ax
-
-mov al, 'o'
-mov [gs:2 * 1], ax
-
-mov al, 'o'
-mov [gs:2 * 2], ax
-
-mov al, 't'
-mov [gs:2 * 3], ax
-
-mov al, 'l'
-mov [gs:2 * 4], ax
-
-mov al, 'o'
-mov [gs:2 * 5], ax
-
-mov al, 'a'
-mov [gs:2 * 6], ax
-
-mov al, 'd'
-mov [gs:2 * 7], ax
-
-mov al, 'e'
-mov [gs:2 * 8], ax
-
-mov al, 'r'
-mov [gs:2 * 9], ax
-
+mov ah, 0x03 ;青色
+mov ecx, bootloader_tag_end - bootloader_tag
+xor ebx, ebx
+mov esi, bootloader_tag
+output_bootloader_tag:
+    mov al, [esi]
+    mov word[gs:bx], ax
+    inc esi
+    add ebx,2
+    loop output_bootloader_tag
 jmp $ ; 死循环
+
+bootloader_tag db 'run bootloader'
+bootloader_tag_end:

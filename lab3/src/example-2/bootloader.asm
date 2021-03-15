@@ -1,6 +1,19 @@
 %include "boot.inc"
 org 0x7e00
 [bits 16]
+mov ax, 0xb800
+mov gs, ax
+mov ah, 0x03 ;青色
+mov ecx, bootloader_tag_end - bootloader_tag
+xor ebx, ebx
+mov esi, bootloader_tag
+output_bootloader_tag:
+    mov al, [esi]
+    mov word[gs:bx], ax
+    inc esi
+    add ebx,2
+    loop output_bootloader_tag
+
 ;空描述符
 mov dword [GDT_START_ADDRESS+0x00],0x00
 mov dword [GDT_START_ADDRESS+0x04],0x00  
@@ -50,20 +63,24 @@ mov ss, eax
 mov eax, VIDEO_SELECTOR
 mov gs, eax
 
-mov ecx, 19
-xor ebx, ebx
-xor esi, esi
+mov ecx, protect_mode_tag_end - protect_mode_tag
+mov ebx, 80 * 2
+mov esi, protect_mode_tag
 mov ah, 0x3
-output_string:
-    mov al, [bx+string]
-    mov word[gs:si], ax
-    add esi, 2
-    inc ebx
-    loop output_string
+output_protect_mode_tag:
+    mov al, [esi]
+    mov word[gs:ebx], ax
+    add ebx, 2
+    inc esi
+    loop output_protect_mode_tag
 
 jmp $ ; 死循环
 
 pgdt dw 0
      dd GDT_START_ADDRESS
 
-string db 'in the protect mode'
+bootloader_tag db 'run bootloader'
+bootloader_tag_end:
+
+protect_mode_tag db 'enter protect mode'
+protect_mode_tag_end:

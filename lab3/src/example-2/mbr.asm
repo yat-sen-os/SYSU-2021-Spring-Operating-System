@@ -1,4 +1,5 @@
-org 0x7c00
+%include "boot.inc"
+
 [bits 16]
 xor ax, ax ; eax = 0
 ; 初始化段寄存器, 段地址全部设为0
@@ -9,26 +10,38 @@ mov fs, ax
 mov gs, ax
 
 ; 初始化栈指针
-mov sp, 0x7c00
+mov sp, 0x7c00    
 
-mov ax, 1                ; 逻辑扇区号第0~15位
-mov cx, 0                ; 逻辑扇区号第16~31位
-mov bx, 0x7e00           ; bootloader的加载地址
-call asm_read_hard_disk  ; 读取硬盘
-jmp 0x0000:0x7e00        ; 跳转到bootloader
+mov ax, LOADER_START_SECTOR
+mov cx, LOADER_SECTOR_COUNT
+mov bx, LOADER_START_ADDRESS   
+
+load_bootloader: 
+    push ax
+    push bx
+    call asm_read_hard_disk  ; 读取硬盘
+    add sp, 4
+    inc ax
+    add bx, 512
+    loop load_bootloader
+
+    jmp 0x0000:0x7e00        ; 跳转到bootloader
 
 jmp $ ; 死循环
 
+; asm_read_hard_disk(memory,block)
+; 加载逻辑扇区号为block的扇区到内存地址memory
+
 asm_read_hard_disk:                           
-; 从硬盘读取一个逻辑扇区
+    push bp
+    mov bp, sp
 
-; 参数列表
-; ax=逻辑扇区号0~15位
-; cx=逻辑扇区号16~28位
-; ds:bx=读取出的数据放入地址
+    push ax
+    push bx
+    push cx
+    push dx
 
-; 返回值
-; bx=bx+512
+    mov ax, [bp + 2 * 3] ; 逻辑扇区低16位
 
     mov dx, 0x1f3
     out dx, al    ; LBA地址7~0
@@ -37,15 +50,14 @@ asm_read_hard_disk:
     mov al, ah
     out dx, al    ; LBA地址15~8
 
-    mov ax, cx
-
+    xor ax, ax
     inc dx        ; 0x1f5
-    out dx, al    ; LBA地址23~16
+    out dx, al    ; LBA地址23~16 = 0
 
     inc dx        ; 0x1f6
     mov al, ah
     and al, 0x0f
-    or al, 0xe0   ; LBA地址27~24
+    or al, 0xe0   ; LBA地址27~24 = 0
     out dx, al
 
     mov dx, 0x1f2
@@ -65,6 +77,7 @@ asm_read_hard_disk:
     
 
     ; 读取512字节到地址ds:bx
+    mov bx, [bp + 2 * 2]
     mov cx, 256   ; 每次读取一个字，2个字节，因此读取256次即可          
     mov dx, 0x1f0
   .readw:
@@ -73,6 +86,12 @@ asm_read_hard_disk:
     add bx, 2
     loop .readw
       
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    pop bp
+
     ret
 
 times 510 - ($ - $$) db 0
