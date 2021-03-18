@@ -29,15 +29,15 @@
 
 ### 2.1
 
-请修改1.2的代码，**使用实模式下的中断来输出你的学号**，可以参考[https://blog.csdn.net/lindorx/article/details/83957903]。说说你是怎么做的，并将结果截图。
+请修改1.2的代码，**使用实模式下的中断来输出你的学号**，可以参考<https://blog.csdn.net/lindorx/article/details/83957903>。说说你是怎么做的，并将结果截图。
 
 ### 2.2
 
-请探索实模式下的光标中断，**利用中断实现光标的位置获取和光标的移动**，可以参考[https://blog.csdn.net/lindorx/article/details/83957903]。说说你是怎么做的，并将结果截图。
+请探索实模式下的光标中断，**利用中断实现光标的位置获取和光标的移动**，可以参考<https://blog.csdn.net/lindorx/article/details/83957903>。说说你是怎么做的，并将结果截图。
 
 ### 2.3
 
-在2.1和2.2的知识的基础上，探索实模式的键盘中断，**利用键盘中断实现键盘输入并回显**，可以参考[https://blog.csdn.net/deniece1/article/details/103447413]。关于键盘扫描码，可以参考[http://blog.sina.com.cn/s/blog_1511e79950102x2b0.html]。说说你是怎么做的，并将结果截图。
+在2.1和2.2的知识的基础上，探索实模式的键盘中断，**利用键盘中断实现键盘输入并回显**，可以参考<https://blog.csdn.net/deniece1/article/details/103447413>。关于键盘扫描码，可以参考<http://blog.sina.com.cn/s/blog_1511e79950102x2b0.html>。说说你是怎么做的，并将结果截图。
 
 ## Assignment 3 汇编
 
@@ -912,7 +912,7 @@ gdb
 target remote:1234
 ```
 
-然后就可以开始debug了。同学们可以从gdb教程[http://c.biancheng.net/view/8123.html]中学习到gdb的常用调试命令，但对于本次实验来说，用到的命令大多数是下面几个。
+然后就可以开始debug了。同学们可以从gdb教程<http://c.biancheng.net/view/8123.html>中学习到gdb的常用调试命令，但对于本次实验来说，用到的命令大多数是下面几个。
 
 | gdb指令                      | 含义                                     |
 | ---------------------------- | ---------------------------------------- |
