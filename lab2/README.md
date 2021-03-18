@@ -55,7 +55,7 @@
 
 ```
 if a1 < 12 then
-	if_flag = a1 * 2 + 1
+	if_flag = a1 / 2 + 1
 else if a1 < 24 then
 	if_flag = (24 - a1) * a1
 else
