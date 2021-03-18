@@ -31,6 +31,15 @@
 
 请修改1.2的代码，**使用实模式下的中断来输出你的学号**，可以参考<https://blog.csdn.net/lindorx/article/details/83957903>。说说你是怎么做的，并将结果截图。
 
+另外可以参考：
+
+- [OSDev 关于 BIOS 的介绍](https://wiki.osdev.org/BIOS)
+- [BIOS 中断表](http://www.ctyme.com/rbrown.htm)
+- [VIDEO - WRITE CHARACTER ONLY AT CURSOR POSITION](http://www.ctyme.com/intr/rb-0100.htm)
+- [VIDEO - WRITE CHARACTER AND ATTRIBUTE AT CURSOR POSITION](http://www.ctyme.com/intr/rb-0099.htm)
+- [VIDEO - WRITE STRING (AT and later,EGA)](http://www.ctyme.com/intr/rb-0210.htm)
+- [VIDEO - GET CURSOR POSITION AND SIZE](http://www.ctyme.com/intr/rb-0088.htm)
+
 ### 2.2
 
 请探索实模式下的光标中断，**利用中断实现光标的位置获取和光标的移动**，可以参考<https://blog.csdn.net/lindorx/article/details/83957903>。说说你是怎么做的，并将结果截图。
