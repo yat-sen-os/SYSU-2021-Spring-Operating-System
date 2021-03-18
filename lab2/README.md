@@ -27,11 +27,7 @@
 
 ## Assignment 2 实模式中断
 
-### 2.1
-
-请修改1.2的代码，**使用实模式下的中断来输出你的学号**，可以参考<https://blog.csdn.net/lindorx/article/details/83957903>。说说你是怎么做的，并将结果截图。
-
-另外可以参考：
+参考资料如下。
 
 - [OSDev 关于 BIOS 的介绍](https://wiki.osdev.org/BIOS)
 - [BIOS 中断表](http://www.ctyme.com/rbrown.htm)
@@ -39,10 +35,34 @@
 - [VIDEO - WRITE CHARACTER AND ATTRIBUTE AT CURSOR POSITION](http://www.ctyme.com/intr/rb-0099.htm)
 - [VIDEO - WRITE STRING (AT and later,EGA)](http://www.ctyme.com/intr/rb-0210.htm)
 - [VIDEO - GET CURSOR POSITION AND SIZE](http://www.ctyme.com/intr/rb-0088.htm)
+- [10h中断](https://zh.wikipedia.org/wiki/INT_10H)
+
+2.1和2.2使用的都是实模式中断`int 10h`，由于功能号不同，执行的结果也就不同。在`int 10h`中断的资料 https://zh.wikipedia.org/wiki/INT_10H 中，其只给出10h中断下各个功能号的用途，并未给出实际的用法。因此，同学们可能一开始会感觉不知所云，教程下面给出同学们完成本次实验需要用到的功能号。
+
+| 功能                       | 功能号 | 参数                                         | 返回值                                           |
+| -------------------------- | ------ | -------------------------------------------- | ------------------------------------------------ |
+| 设置光标位置               | AH=02H | BH=页码，DH=行，DL=列                        | 无                                               |
+| 获取光标位置和形状         | AH=03H | BX=页码                                      | AX=0，CH=行扫描开始，CL=行扫描结束，DH=行，DL=列 |
+| 在当前光标位置写字符和属性 | AH=09H | AL=字符，BH=页码，BL=颜色，CX=输出字符的个数 | 无                                               |
+
+注意，“页码”均设置为0。
+
+一般地，中断的调用方式如下。
+
+```
+将参数和功能号写入寄存器
+int 中断号
+从寄存器中取出返回值
+```
+
+
+### 2.1
+
+请探索实模式下的光标中断，**利用中断实现光标的位置获取和光标的移动**。说说你是怎么做的，并将结果截图。
 
 ### 2.2
 
-请探索实模式下的光标中断，**利用中断实现光标的位置获取和光标的移动**，可以参考<https://blog.csdn.net/lindorx/article/details/83957903>。说说你是怎么做的，并将结果截图。
+请修改1.2的代码，**使用实模式下的中断来输出你的学号**。说说你是怎么做的，并将结果截图。
 
 ### 2.3
 
