@@ -944,7 +944,7 @@ public:
 #endif
 ```
 
-> 使用C++的一个好处是我们可以把对操作系统内核的模块划分显式地用代码表现出来。
+> 使用C++的一个好处是我们可以把对操作系统内核的模块划分显式地用一个个的class表现出来。
 
 `include/os_type.h`定义了基本的数据类型的别名，如下所示。
 
@@ -966,7 +966,7 @@ typedef unsigned int dword;
 #endif
 ```
 
-初始化IDT的函数是`InterruptManager::initialize`，如下所示。
+在使用中断之前，我们首先需要初始化IDT，承担起这项工作的函数是`InterruptManager::initialize`，如下所示。
 
 ```cpp
 void InterruptManager::initialize()
@@ -986,19 +986,21 @@ void InterruptManager::initialize()
 
 为了使CPU能够找到IDT中的中断处理函数，我们需要将IDT的信息放置到寄存器IDTR中。当中断发生时，CPU会自动到IDTR中找到IDT的地址，然后根据中断向量号在IDT找到对应的中断描述符，最后跳转到中断描述符对应的函数中进行处理，IDTR的结构如下。
 
-<img src="gallery/IDTR.PNG" alt="IDTR" style="zoom:45%;" />
+<img src="gallery/IDTR.PNG" alt="IDTR" style="zoom:60%;" />
 
 由于我们只有256个中断描述符，每个中断描述符的大小均为8字节，因此我们有
 $$
 表界限=8*256-1=2047
 $$
+此时，IDTR的32位基地址是`0x8880`，表界限是`2047`。
+
 确定了IDT的基地址和表界限后，我们就可以初始化IDTR了。IDTR的初始化需要用到指令`lidt`，其用法如下。
 
 ```asm
 lidt [tag]
 ```
 
-`lidt`实际上是将以`tag`为起始地址的48字节放入到寄存器IDTR中。由于我们打算在C代码中初始化IDT的，而C语言的语法并未提供`lidt`语句。因此我们需要在汇编代码中实现能够将IDT的信息放入到IDTR的函数`asm_lidt`，代码放置在`src/utils/asm_utils.asm`中，如下所示。
+`lidt`实际上是将以`tag`为起始地址的48字节放入到寄存器IDTR中。由于我们打算在C代码中初始化IDT，而C语言的语法并未提供`lidt`语句。因此我们需要在汇编代码中实现能够将IDT的信息放入到IDTR的函数`asm_lidt`，代码放置在`src/utils/asm_utils.asm`中，如下所示。
 
 ```asm
 ; void asm_lidt(uint32 start, uint16 limit)
@@ -1032,7 +1034,9 @@ ASM_IDTR dw 0
 + DPL=0表示特权级0.
 + 代码段选择子等于bootloader中的代码段选择子，也就是寻址4GB空间的代码段选择子。
 
-因此，唯一变化的就是中断处理程序在目标代码段中的偏移。由于我们的程序运行在平坦模式下，也就是段起始地址从内存地址0开始，长度为4GB。因此函数名就是中断处理程序在目标代码段中的偏移。段描述符的设置的函数是`InterruptManager::setInterruptDescriptor`，如下所示。
+因此，从目前来看，不同的中断描述符间变化的只是中断处理程序在目标代码段中的偏移。由于我们的程序运行在平坦模式下，也就是段起始地址从内存地址0开始，长度为4GB。此时，函数名就是中断处理程序在目标代码段中的偏移。
+
+我们将段描述符的设置定义在函数`InterruptManager::setInterruptDescriptor`中，如下所示。
 
 ```cpp
 // 设置中断描述符
@@ -1081,7 +1085,7 @@ ptr4 = ptr3 + 2;
 
 此时，同学们应该明白第一点的具体含义——当指针加上或减去一个数值时，加上或减去的是这个数值乘以指针指向的数据类型的大小。对于`[]`运算符和指针`ptr1`，`ptr1[2]`实际上表示的是`*(ptr1 + 2)`，也就是`*ptr2`——位于地址`0x208`处的`int`类型变量。
 
-对于第三点，我们考虑`IDT = (uint32 *)IDT_START_ADDRESS;`。正是因为指针的本质就是地址，我们才可以把一个地址转换成指针类型`uint32 *`。而这个地址的具体含义，取决于我们看待这个地址的方式，即指针指向的数据类型。对于地址`0x200`，如果我们令`int *ptr = (int *)0x200`，那么`0x200`就是一个`int`类型变量的起始地址；如果我们以`ptr[3],ptr[8]`的方式来使用，那么`ptr`就是一个数组。注意到数组名实际上是指针常量(注意指针常量和常量指针的区别)；如果我们令`char *ptr = (char *)0x200`，那么`0x200`就是一个`char`类型变量的起始地址；但是，如果我们令`void *ptr = (void *)0x200`，此时`*ptr`是不被允许的，因为我们不知道以何种方式来看待地址`0x200`。
+对于第三点，我们考虑语句`IDT = (uint32 *)IDT_START_ADDRESS;`。正是因为指针的本质就是地址，我们才可以把一个地址转换成指针类型`uint32 *`。而这个地址的具体含义，取决于我们看待这个地址的方式，即指针指向的数据类型。对于地址`0x200`，如果我们令`int *ptr = (int *)0x200`，那么`0x200`就是一个`int`类型变量的起始地址；如果我们以`ptr[3],ptr[8]`的方式来使用，那么`ptr`就是一个数组。注意到数组名实际上是指针常量(注意指针常量和常量指针的区别)；如果我们令`char *ptr = (char *)0x200`，那么`0x200`就是一个`char`类型变量的起始地址；但是，如果我们令`void *ptr = (void *)0x200`，此时`*ptr`是不被允许的，因为我们不知道以何种方式来看待地址`0x200`。
 
 如果读者明白了第三点，读者也就能明白第二点。
 
@@ -1103,18 +1107,24 @@ for (uint i = 0; i < 256; ++i)
 }
 ```
 
-最后，我们在函数`setup_kernel`中初始化中断处理器。
+最后，我们在函数`setup_kernel`中定义并初始化中断处理器。注意，我们只会定义一个`InterruptManager`的实例，因为中断管理器有且只有一个。
 
 ```cpp
+... // 头文件的包含
+    
+// 中断管理器
+InterruptManager interruptManager;
+
 extern "C" void setup_kernel()
 {
     // 中断处理部件
     interruptManager.initialize();
+    // 死循环
     asm_halt();
 }
 ```
 
-由于中断管理器只会有一个实例，我们将这些实例的定义统一放到`include/os_modules.h`下。
+然后我们在`include/os_modules.h`中声明这个实例，以便在其他`cpp`文件中使用。
 
 ```cpp
 #ifndef OS_MODULES_H
@@ -1122,37 +1132,36 @@ extern "C" void setup_kernel()
 
 #include "interrupt.h"
 
-InterruptManager interruptManager;
+extern InterruptManager interruptManager;
 
 #endif
 ```
 
-为什么要在`InterruptManager`中定义`initialize`函数呢？因为我们将这些模块定义为一个全局变量，而在操作系统运行后，这些全局变量的构造函数不会被自动调用，而我们又需要初始化这些模块，因此我们定义一个显式的初始化函数。事实上，对于后面的每一个可能用作全局变量的类，我们都需要显式地提供这样一个初始化函数。
+为什么要在`InterruptManager`中定义`initialize`函数呢？因为我们将这些模块定义为一个全局变量，而在操作系统运行后，这些全局变量的构造函数不会被自动调用，而我们又需要初始化这些模块，因此我们需要定义一个显式的初始化函数。事实上，对于后面的每一个可能用作全局变量的类，我们都需要显式地提供这样一个初始化函数。
 
-由于我们的`InterruptManager`的实现文件放置在`src/interrupt`下，为了让makefile能够找到这个文件并编译，我们需要在`makefile`中加上下面这一句。
+最后，我们将一些常量统一定义在文件`include/os_constant.h`下。
 
-```makefile
-CXX_SOURCE += $(wildcard $(SRCDIR)/interrupt/*.cpp)
+```cpp
+#ifndef OS_CONSTANT_H
+#define OS_CONSTANT_H
+
+#define IDT_START_ADDRESS 0x8880
+#define CODE_SELECTOR 0x20
+
+#endif
 ```
 
-而其他的一切并不用改变，从这一点上来说，使用makefile编译的便利性便能很好地体现出来了。然后我们使用如下语句编译。
+由于我们之前在makefile中写了可以自动找到文件夹下的所有`.cpp`文件的语句，因此在example 3中，我们虽然增加了`src/interrupt.cpp`文件，我们也不需要修改makefile也可以编译。从这一点上来说，使用makefile编译的便利性便能很好地体现出来了。然后我们使用如下语句编译。
 
 ```shell
-make complie
-make build
+make
 ```
 
-使用bochs加载运行后，我们使用`info idt`命令可以查看我们是否已经放入默认的中断描述符，如下所示。
+使用qemu在debug模式下加载运行后，我们在gdb下使用`x/256gx 0x8880`命令可以查看我们是否已经放入默认的中断描述符，如下所示。
 
-```shell
-Interrupt Descriptor Table (base=0x0000000000008880, limit=2047):
-IDT[0x00]=32-Bit Interrupt Gate target=0x0020:0x00020130, DPL=0
-IDT[0x01]=32-Bit Interrupt Gate target=0x0020:0x00020130, DPL=0
-...
-IDT[0xff]=32-Bit Interrupt Gate target=0x0020:0x00020130, DPL=0
-```
+<img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab4/gallery/example-3.png" alt="example-3" style="zoom:50%;" />
 
-可以发现，上面的信息显示IDT的起始地址是`0x8880`，表界限是`2047`，256(0x100)个中断描述符的段选择子是`0x20`，中断处理程序起始地址是`0x20130`，DPL等于`0`，符合我们的预期。
+可以验证，上面的输出结果符合我们的预期。
 
 # 8259A芯片
 
@@ -1160,7 +1169,7 @@ IDT[0xff]=32-Bit Interrupt Gate target=0x0020:0x00020130, DPL=0
 
 我们已经知道，CPU需要处理来自磁盘、鼠标和键盘等外设的中断请求。但是，计算机需要知道这些中断请求的中断向量号和以何种优先级来处理同时到来的中断请求。刚刚提到的问题是通过8259A芯片来解决的，8259A芯片又被称为可编程中断控制器（PIC Programmable Interrupt Controller）。可编程的意思是说，我们可以通过代码来修改8259A的处理优先级、屏蔽某个中断等。在PC中，8259A芯片有两片，称为主片和从片。其结构如下。
 
-<img src="C:\Users\NelsonCheung\Desktop\项目\NeXon\tutorial\第3章 硬中断\gallery\8259A.PNG" alt="8259A" style="zoom:38%;" />
+<img src="gallery/8259A.PNG" alt="8259A" style="zoom:38%;" />
 
 每个8259A都有8根中断请求信号线，IRQ0-IRQ7，默认优先级从高到低。这些信号线与外设相连，外设通过IRQ向8259A芯片发送中断请求。由于历史原因，从片默认是连接到主片的IRQ2的位置。为了使8259A芯片可以正常工作，我们必须先要对8259A芯片初始化。注意到，主片的IRQ1的位置是键盘中断的位置。此时，熟悉实模式的读者可能会产生疑问，因为在实模式下读者似乎并不需要实行8259A芯片的相关操作。实际上，实模式也是需要操作8259A芯片的，只不过BIOS帮我们做了这个工作。我反复强调过，在保护模式下原先的实模式中断不再适用。此时，我们不得不去编程8259A芯片来实现保护模式下的中断程序。
 
@@ -1245,7 +1254,7 @@ OCW有3个，分别是OCW1，OCW2，OCW3，其详细结构如下。
 
 + OCW2。一般用于发送EOI消息，发送到0x20（主片）或0xA0（从片）端口。
 
-  <img src="C:\Users\NelsonCheung\Desktop\项目\NeXon\tutorial\第3章 硬中断\gallery\OCW2.PNG" alt="OCW2" style="zoom:38%;" />
+  <img src="gallery/OCW2.PNG" alt="OCW2" style="zoom:38%;" />
 
   EOI消息是发送`0x20`。
 
