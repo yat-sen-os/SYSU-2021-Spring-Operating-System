@@ -11,6 +11,7 @@ private:
     
 public:
     InterruptManager();
+    // 初始化
     void initialize();
     // 设置中断描述符
     // index   第index个描述符，index=0, 1, ..., 255

@@ -5,6 +5,7 @@
 # 实验要求
 
 + 在调用汇编函数的前后，编译器做了哪些工作。gdb反汇编查看
++ 利用时钟中断来实现一个中断程序。
 
 # 实验概述
 
@@ -249,8 +250,6 @@ make
 
 # C/C++和汇编混合编程
 
-## 混合编程的语法
-
 C/C++和汇编混合编程包含两个方面。
 
 + 在C/C++代码中使用汇编代码实现的函数。
@@ -371,7 +370,7 @@ function_from_asm:
 
 我们已经学习了混合编程的知识和程序编译的过程，现在通过一个例子来加深我们的印象。
 
-## Example 1 混合编程
+# Example 1 混合编程
 
 在Example 1中，我们需要做的工作如下。
 
@@ -442,9 +441,9 @@ g++ -o main.out main.o c_func.o cpp_func.o asm_func.o -m32
 
 最后我们执行`main.out`，输出如下结果。
 
-<img src="gallery/example-1.png" alt="函数调用规则" style="zoom:60%;" />
+<img src="gallery/example-1.PNG" alt="函数调用规则" style="zoom:60%;" />
 
-## Example 2 内核的加载
+# Example 2 内核的加载
 
 > Example 2的代码放置在`src/5`下，因此下面的文件名和文件夹名使用的是相对地址。
 
@@ -888,8 +887,6 @@ make debug
 
 **CPU 根据特权级的判断设定即将运行程序的栈地址。**由于我们后面会实现用户进程，用户进程运行在用户态下，而每一个用户进程都会有自己的栈。因此当中断发生，我们从用户态陷入内核态后，CPU会自动将栈从用户栈切换到内核栈。但在这里，我们只会在内核态编写我们的代码，因此我们的栈地址不会被切换，此步可以暂时忽略。
 
-# 勘误 什么样的中断会压入错误码？
-
 **CPU保护现场。** CPU依次将EFLAGS、CS、EIP中的内容压栈。其实，这是在特权级不变时候的情况，如果特权级发生变换，如从用户态切换到内核态后，CPU会依次将SS，ESP，EFLAGS、CS、EIP压栈。不过这里我们暂时只运行在特权级0下。读者在学习操作系统时还会提到CPU会压入错误码，但只有部份中断才会压入错误码，详情见前面的保护模式中断的表格。
 
 **CPU跳转到中断服务程序的第一条指令开始处执行。**保护完现场后，CPU会将中断描述符中的段选择子送入CS段寄存器，然后将中断描述符中的目标代码段偏移送入EIP。同时，CPU更新EFLAGS寄存器，若涉及特权级的变换，SS和ESP还会发生变化。当CS和EIP更新后，CPU实际上就跳转到中断服务程序的第一条指令处。
@@ -900,12 +897,13 @@ make debug
 
 关于保护模式下的中断处理过程已经讲完，下面我们通过初始化IDT来理解保护模式下的中断程序编写过程。
 
-## Example 3 初始化IDT
+# Example 3 初始化IDT
 
 > + Example 2的代码放置在`src/6`下，因此下面的文件名和文件夹名使用的是相对地址。
 > + 从Example 3开始，我们则尽量在C/C++环境下实现操作系统。
+> + Example 3的代码在Example 2的基础上修改。
 
-在example 3中，我们将会初始化IDT的256个中断，这256个中断的中断处理程序均是向栈中压入`0xdeadbeef`后做死循环。
+在Example 3中，我们将会初始化IDT的256个中断，这256个中断的中断处理程序均是向栈中压入`0xdeadbeef`后做死循环。
 
 在前面的例子中，我们通过bootloader跳转到初始化内核的函数`setup_kernel`，接下来我们就要开始初始化内核的第一步——初始化中断描述符表IDT。
 
@@ -933,6 +931,7 @@ private:
     
 public:
     InterruptManager();
+    // 初始化
     void initialize();
     // 设置中断描述符
     // index   第index个描述符，index=0, 1, ..., 255
@@ -946,7 +945,7 @@ public:
 
 > 使用C++的一个好处是我们可以把对操作系统内核的模块划分显式地用一个个的class表现出来。
 
-`include/os_type.h`定义了基本的数据类型的别名，如下所示。
+我们在`include/os_type.h`定义了基本的数据类型的别名，如下所示。
 
 ```asm
 #ifndef OS_TYPE_H
@@ -981,6 +980,8 @@ void InterruptManager::initialize()
     }
 }
 ```
+
+`InterruptManager::initialize`先设置IDTR，然后再初始化256个中断描述符，下面我们分别来看。
 
 我们不妨将IDT设定在地址`0x8880`处，即`IDT_START_ADDRESS=0x8880`。
 
@@ -1089,25 +1090,42 @@ ptr4 = ptr3 + 2;
 
 如果读者明白了第三点，读者也就能明白第二点。
 
-我们的默认的中断处理函数是`asm_interrupt_empty_handler`，放置在`src/utils/asm_utils.asm`中，如下所示。
+接下来，我们定义一个默认的中断处理函数是`asm_interrupt_empty_handler`，放置在`src/utils/asm_utils.asm`中，如下所示。
 
 ```asm
-; void asm_interrupt_empty_handler()
-asm_interrupt_empty_handler:
-    push 0xdeadbeef
+ASM_UNHANDLED_INTERRUPT_INFO db 'Unhandled interrupt happened, halt...'
+                             db 0
+
+; void asm_unhandled_interrupt()
+asm_unhandled_interrupt:
+    cli
+    mov esi, ASM_UNHANDLED_INTERRUPT_INFO
+    xor ebx, ebx
+    mov ah, 0x03
+.output_information:
+    cmp byte[esi], 0
+    je .end
+    mov al, byte[esi]
+    mov word[gs:bx], ax
+    inc esi
+    add ebx, 2
+    jmp .output_information
+.end:
     jmp $
 ```
 
-我们在`initialize`中调用`setInterruptDescriptor`放入256个默认的中断描述符即可。
+`asm_interrupt_empty_handler`首先关中断，然后输出提示字符串，最后做死循环。
+
+在`InterruptManager::initialize`最后，我们调用`setInterruptDescriptor`放入256个默认的中断描述符即可，这256个默认的中断描述符对应的中断处理函数是`asm_unhandled_interrupt`。
 
 ```cpp
 for (uint i = 0; i < 256; ++i)
 {
-	setInterruptDescriptor(i, (uint32)asm_interrupt_empty_handler, 0);
+	setInterruptDescriptor(i, (uint32)asm_unhandled_interrupt, 0);
 }
 ```
 
-最后，我们在函数`setup_kernel`中定义并初始化中断处理器。注意，我们只会定义一个`InterruptManager`的实例，因为中断管理器有且只有一个。
+最后，我们在函数`src/kernel/setup_kernel.cpp`中定义并初始化中断处理器。注意，我们只会定义一个`InterruptManager`的实例，因为中断管理器有且只有一个。
 
 ```cpp
 ... // 头文件的包含
@@ -1151,33 +1169,77 @@ extern InterruptManager interruptManager;
 #endif
 ```
 
-由于我们之前在makefile中写了可以自动找到文件夹下的所有`.cpp`文件的语句，因此在example 3中，我们虽然增加了`src/interrupt.cpp`文件，我们也不需要修改makefile也可以编译。从这一点上来说，使用makefile编译的便利性便能很好地体现出来了。然后我们使用如下语句编译。
+由于我们之前在makefile中写了可以自动找到项目文件夹下的所有`.cpp`文件的语句，因此在example 3中，我们虽然增加了`src/kernel/interrupt.cpp`文件，我们也不需要修改makefile也可以编译。从这一点上来说，使用makefile编译的便利性便能很好地体现出来了。然后我们使用如下语句编译。
 
 ```shell
 make
 ```
 
-使用qemu在debug模式下加载运行后，我们在gdb下使用`x/256gx 0x8880`命令可以查看我们是否已经放入默认的中断描述符，如下所示。
+在qemu的debug模式下加载运行。
+
+```shell
+make debug
+```
+
+我们在gdb下使用`x/256gx 0x8880`命令可以查看我们是否已经放入默认的中断描述符，如下所示。
 
 <img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab4/gallery/example-3.png" alt="example-3" style="zoom:50%;" />
 
 可以验证，上面的输出结果符合我们的预期。
 
+初始化IDT后，我们尝试触发除0异常来验证`asm_unhandled_interrupt`是否可以正常工作。我们修改`setup.cpp`即可。
+
+```cpp
+#include "asm_utils.h"
+#include "interrupt.h"
+
+// 中断管理器
+InterruptManager interruptManager;
+
+extern "C" void setup_kernel()
+{
+    // 中断处理部件
+    interruptManager.initialize();
+
+    // 尝试触发除0错误
+    int a = 1 / 0;
+
+    // 死循环
+    asm_halt();
+}
+```
+
+然后使用如下语句编译运行。
+
+```cpp
+make && make run
+```
+
+我们可以看到中断被正常调用。
+
+<img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab4/gallery/example-3-1.png" alt="example-3-1" style="zoom:67%;" />
+
+至此，我们已经完成了IDT的初始化。
+
 # 8259A芯片
 
 ## 介绍
 
-我们已经知道，CPU需要处理来自磁盘、鼠标和键盘等外设的中断请求。但是，计算机需要知道这些中断请求的中断向量号和以何种优先级来处理同时到来的中断请求。刚刚提到的问题是通过8259A芯片来解决的，8259A芯片又被称为可编程中断控制器（PIC Programmable Interrupt Controller）。可编程的意思是说，我们可以通过代码来修改8259A的处理优先级、屏蔽某个中断等。在PC中，8259A芯片有两片，称为主片和从片。其结构如下。
+我们已经知道，现代操作系统是中断驱动的，操作系统需要时刻准备处理来自磁盘、鼠标和键盘等外设的中断请求。
 
-<img src="gallery/8259A.PNG" alt="8259A" style="zoom:38%;" />
+> 来自硬件的中断被称为硬中断，我们在代码中使用`int`指令调用的中断被称为软中断。但是二者只是调用方式不同，而中断的初始化和中断描述符的设置方式等是完全相同的。
 
-每个8259A都有8根中断请求信号线，IRQ0-IRQ7，默认优先级从高到低。这些信号线与外设相连，外设通过IRQ向8259A芯片发送中断请求。由于历史原因，从片默认是连接到主片的IRQ2的位置。为了使8259A芯片可以正常工作，我们必须先要对8259A芯片初始化。注意到，主片的IRQ1的位置是键盘中断的位置。此时，熟悉实模式的读者可能会产生疑问，因为在实模式下读者似乎并不需要实行8259A芯片的相关操作。实际上，实模式也是需要操作8259A芯片的，只不过BIOS帮我们做了这个工作。我反复强调过，在保护模式下原先的实模式中断不再适用。此时，我们不得不去编程8259A芯片来实现保护模式下的中断程序。
+但是，计算机需要知道这些中断请求的中断向量号和以何种优先级来处理同时到来的中断请求。刚刚提到的问题是通过8259A芯片来解决的，8259A芯片又被称为可编程中断控制器（PIC: Programmable Interrupt Controller）。可编程的意思是说，我们可以通过代码来修改8259A的处理优先级、屏蔽某个中断等。在PC中，8259A芯片有两片，f分别被称为主片和从片。其结构如下。
+
+<img src="gallery/8259A.PNG" alt="8259A" style="zoom:50%;" />
+
+每个8259A都有8根中断请求信号线，IRQ0-IRQ7，默认优先级从高到低。这些信号线与外设相连，外设通过IRQ向8259A芯片发送中断请求。由于历史原因，从片默认是连接到主片的IRQ2的位置。为了使8259A芯片可以正常工作，我们必须先要对8259A芯片初始化。注意到，主片的IRQ1的位置是键盘中断的位置。此时，熟悉实模式的读者可能会产生疑问：在实模式下即使不进行8259A芯片的相关操作，也可以使用`int`指令来调用中断。实际上，实模式也是需要操作8259A芯片的，只不过BIOS帮我们做了这个工作。同学们需要特别注意，在保护模式下原先的实模式中断不可以被使用。此时，我们不得不去编程8259A芯片来实现保护模式下的中断程序。
 
 下面我就来学习如何对8259A芯片进行编程。
 
 ## 8259A的初始化
 
-在使用8259A芯片之前我们需要对8259A的两块芯片进行初始化。初始化过程实际上是通过依次向8259A的特定端口发送4个ICW（初始化命令字Initialization Command Words）完成的。四个ICW必须严格按照顺序依次发送。
+在使用8259A芯片之前我们需要对8259A的两块芯片进行初始化。初始化过程是依次通过向8259A的特定端口发送4个ICW，ICW1\~ICW4（初始化命令字，Initialization Command Words）来完成的。四个ICW必须严格按照顺序依次发送。
 
 下面是四个ICW的结构。
 
@@ -1185,11 +1247,11 @@ make
 
   <img src="gallery/ICW1.PNG" alt="ICW1" style="zoom:38%;" />
 
-  + I位：若置1，表示ICW4会被发送。置0表示ICW4不会被发送。这里我们置1。
+  + I位：若置1，表示ICW4会被发送。置0表示ICW4不会被发送。我们会发送ICW4，所以I位置1。
 
-  + C位：若置0，表示8259A工作在级联环境下。这里我们置0。
+  + C位：若置0，表示8259A工作在级联环境下。8259A的主片和从片我们都会使用到，所以C位置0。
 
-  + M位：指出中断请求的电平触发模式，在PC机中，它应当被置0，表示采用“边沿触发模式”。
+  + M位：指出中断请求的电平触发模式，在PC机中，M位应当被置0，表示采用“边沿触发模式”。
 
   
 
@@ -1197,7 +1259,7 @@ make
 
   <img src="gallery/ICW2.PNG" alt="ICW2" style="zoom:38%;" />
 
-  对于主片和从片，ICW2都是用来表示当IRQ0的中断发生时，8259A会向CPU提供的中断向量号。此后，IRQ1，IRQ2，...，IRQ7的中断号为ICW2+1，ICW2+2，...，ICW+7。其中，ICW2的低3位必须是0。这里，我们置主片的IRQ0为0x20，从片的IRQ0为0x28。
+  对于主片和从片，ICW2都是用来表示当IRQ0的中断发生时，8259A会向CPU提供的中断向量号。此后，IRQ0，IRQ1，...，IRQ7的中断号为ICW2，ICW2+1，ICW2+2，...，ICW+7。其中，ICW2的低3位必须是0。这里，我们置主片的ICW2为0x20，从片的ICW2为0x28。
 
   
 
@@ -1207,13 +1269,13 @@ make
 
   <img src="gallery/ICW3主片.PNG" alt="ICW3从片" style="zoom:38%;" />
 
-  上面的相应位被置1，则相应的IRQ线就被用作于与从片相连，若置0则表示被连接到外围设备。前面已经提到，由于历史原因，从片被连接到主片的IRQ2位，所以，主片的ICW3=0x04。
+  上面的相应位被置1，则相应的IRQ线就被用作于与从片相连，若置0则表示被连接到外围设备。前面已经提到，由于历史原因，从片被连接到主片的IRQ2位，所以，主片的ICW3=0x04，即只有第2位被置1。
 
   从片的结构如下。
 
   <img src="gallery/ICW3从片.PNG" alt="ICW3从片" style="zoom:38%;" />
 
-  IRQ指出是主片的哪一个IRQ连接到了从片，这里，从片的ICW3=0x02。
+  IRQ指出是主片的哪一个IRQ连接到了从片，这里，从片的ICW3=0x02，即IRQ=0x02，其他位置均为0。
 
   
 
@@ -1221,15 +1283,21 @@ make
 
   <img src="gallery/ICW4.PNG" alt="ICW4" style="zoom:38%;" />
 
-  + EOI位：若置1表示自动结束，在PC位上这位需要被清零，详细原因在后面提到。
+  + EOI位：若置1表示自动结束，在PC位上这位需要被清零，详细原因在后面再提到。
 
-  + 80x86位：置1表示PC工作在80x86架构下。
+  + 80x86位：置1表示PC工作在80x86架构下，因此我们置1。
 
 到这里，读者已经发现，其实ICW1，ICW3，ICW4的值已经固定，可变的只有ICW2。
 
 ## 8259A的工作流程
 
-首先，一个外部中断请求信号通过中断请求线IRQ传输到IMR（中断屏蔽器），IMR根据所设定的中断屏蔽字来决定是保留还是丢弃。如果被保留，8259A将IRR（请求暂存器）中代表此IRQ的相应位置位，表示此IRQ有中断请求信号。然后向CPU的INTR（中断请求）管脚发送一个信号。但是，CPU不会立即响应该中断，而是执行完当前指令后检查INTR管脚是否有信号。如果有信号，CPU就会转到中断服务。此时，CPU会向8259A的INTA（中断应答）管脚发送一个信号。8259A收到信号后，通过判优部件在IRR中挑选出优先级最高的中断，并将ISR（中断服务寄存器）中代表该中断的相应位置位和将IRR中的相应位清零，表明此中断正在接受CPU的处理请求。同时，将它的编号写入IVR（中断向量寄存器）的低3位，高位内容和ICW2的对应位内容一致。这就是为什么ICW2的低3位必须为0。这时，CPU还会送来第2个INTA信号。当8259A收到信号后就将IVR的内容发往CPU的数据线。当中断号被发送后，8259A就会检测ICW4的EOI位是否被置位。如果EOI位被置位，表示自动结束，则芯片就会自动将ISR的相应位清0。如果EOI没有被置位，则需要中断处理程序向芯片发送EOI消息，芯片收到EOI消息后才会将ISR中的相应位清0。我们之前在设置ICW4时，EOI位被置0。因为EOI被设置为自动结束后，只要8259A向CPU发送了中断向量号，ISR的相应位就会被清0。ISR的相应位被清0后，如果有新的中断请求，8259A又可以向CPU发送新的中断向量号。而CPU很有可能正在处理之前的中断，此时，CPU并不知道哪个中断的优先级高。所以，CPU会暂停当前中断转向处理新的中断，导致了优先级低的中断会打断优先级高的中断执行，也就是说，优先级并未发挥作用。所以，我们前面才要将ICW4的EOI位置0。此时，值得注意的是，**对于8259A芯片我们需要手动在中断返回前向8259A发送EOI消息。如果没有发送EOI消息，那么此后的中断便不会被响应。**一个发送EOI消息的示例代码如下。
+> 此部分内容不需要掌握，只需要记住“**对于8259A芯片产生的中断，我们需要手动在中断返回前向8259A发送EOI消息。如果没有发送EOI消息，那么此后的中断便不会被响应**。”这句话即可。
+
+首先，一个外部中断请求信号通过中断请求线IRQ传输到IMR（中断屏蔽器），IMR根据所设定的中断屏蔽字来决定是保留还是丢弃。如果被保留，8259A将IRR（请求暂存器）中代表此IRQ的相应位置位，表示此IRQ有中断请求信号。然后向CPU的INTR（中断请求）管脚发送一个信号。但是，CPU不会立即响应该中断，而是执行完当前指令后检查INTR管脚是否有信号。如果有信号，CPU就会转到中断服务。此时，CPU会向8259A的INTA（中断应答）管脚发送一个信号。8259A收到信号后，通过判优部件在IRR中挑选出优先级最高的中断，并将ISR（中断服务寄存器）中代表该中断的相应位置位和将IRR中的相应位清零，表明此中断正在接受CPU的处理请求。同时，将它的编号写入IVR（中断向量寄存器）的低3位，高位内容和ICW2的对应位内容一致。这就是为什么ICW2的低3位必须为0。这时，CPU还会送来第2个INTA信号。当8259A收到信号后就将IVR的内容发往CPU的数据线。当中断号被发送后，8259A就会检测ICW4的EOI位是否被置位。如果EOI位被置位，表示自动结束，则芯片就会自动将ISR的相应位清0。如果EOI没有被置位，则需要中断处理程序向芯片发送EOI消息，芯片收到EOI消息后才会将ISR中的相应位清0。我们之前在设置ICW4时，EOI位被置0。因为EOI被设置为自动结束后，只要8259A向CPU发送了中断向量号，ISR的相应位就会被清0。ISR的相应位被清0后，如果有新的中断请求，8259A又可以向CPU发送新的中断向量号。而CPU很有可能正在处理之前的中断，此时，CPU并不知道哪个中断的优先级高。所以，CPU会暂停当前中断转向处理新的中断，导致了优先级低的中断会打断优先级高的中断执行，也就是说，优先级并未发挥作用。所以，我们前面才要将ICW4的EOI位置0。此时，值得注意的是，
+
+**对于8259A芯片产生的中断，我们需要手动在中断返回前向8259A发送EOI消息。如果没有发送EOI消息，那么此后的中断便不会被响应。**
+
+一个发送EOI消息的示例代码如下，`OCW2`在后面会介绍。
 
 ```asm
 ;发送OCW2字
@@ -1250,26 +1318,38 @@ OCW有3个，分别是OCW1，OCW2，OCW3，其详细结构如下。
 
   <img src="gallery/OCW1.PNG" alt="OCW1" style="zoom:38%;" />
 
-  相应位置1表示屏蔽相应的IRQ请求。回忆起我们之前初始化8259A的代码，最后我们将0xff发送到0x21和0xa1端口。这是因为我们还没建立起处理8259A芯片的中断处理函数，所以暂时屏蔽所有中断。
+  相应位置1表示屏蔽相应的IRQ请求。同学们很快可以看到，在初始化8259A的代码末尾，我们将0xFF发送到0x21和0xA1端口。这是因为我们还没建立起处理8259A芯片的中断处理函数，所以暂时屏蔽主片和从片的所有中断。
 
 + OCW2。一般用于发送EOI消息，发送到0x20（主片）或0xA0（从片）端口。
 
   <img src="gallery/OCW2.PNG" alt="OCW2" style="zoom:38%;" />
 
-  EOI消息是发送`0x20`。
+  EOI消息是发送`0x20`，即只有EOI位是1，其他位置为0。
 
 + OCW3。用于设置下一个读端口动作将要读取的IRR或ISR，我们不需要使用。
 
 ## 中断程序的编写思路
 
-中断程序的编写思路如下，首先是将寄存器压栈，然后转向实际上的中断处理程序，中断处理完毕后弹栈，发送EOI消息，最后中断返回。其中，如果不希望某些过程被优先级高的中断打断，则需要在适当的位置使用cli和sti关中断和开中断。其代码描述如下。
+中断处理程序的编写思路如下。
+
++ **保护现场**。现场指的是寄存器的内容，因此在处理中断之前，我们需要手动将寄存器的内容放置到栈上面。待中断返回前，我们会将这部分保护在栈中的寄存器内容放回到相应的寄存器中。
++ **中断处理**。执行中断处理程序。
++ **恢复现场**。中断处理完毕后恢复之前放在栈中的寄存器内容，然后执行`iret`返回。在执行`iret`前，如果有错误码，则需要将错误码弹出栈；如果是8259A芯片产生的中断，则需要在中断返回前发送EOI消息。注意，8259A芯片产生的中断不会错误码。事实上，只有中断向量号1-19的部分中断才会产生错误码。
+
+其代码描述如下。
 
 ```asm
 interrupt_handler_example:
 	pushad
 	... ; 中断处理程序
 	popad
-	; 发送EOI消息
+	
+	; 非必须
+	
+	; 1 弹出错误码，没有则不可以加入
+	add esp, 4
+	
+	; 2 对于8259A芯片产生的中断，最后需要发送EOI消息，若不是则不可以加入
 	mov al, 0x20
 	out 0x20, al
 	out 0xa0, al
@@ -1281,9 +1361,12 @@ interrupt_handler_example:
 
 我们已经学习了8259A芯片的基础知识，我们下面来处理8259A芯片产生的实时钟中断。
 
-## Assignment 4 8259A编程
+# Example 4 8259A编程
 
-> assigment-4：对8529A芯片进行编程，添加处理实时钟中断的函数，函数在第一行显示目前中断发生的次数。
+> + Example 3的代码放置在`src/7`下，因此下面的文件名和文件夹名使用的是相对地址。
+> + Example 4的代码在Example 3的基础上修改。
+
+在Example 4中，我们会对8529A芯片进行编程，添加处理实时钟中断的函数，函数在第一行显示目前中断发生的次数。
 
 我们为中断控制器`InterruptManager`加入如下成员变量和函数。
 
@@ -1292,6 +1375,7 @@ class InterruptManager
 {
 private:
     uint32 *IDT;              // IDT起始地址
+    
     uint32 IRQ0_8259A_MASTER; // 主片中断起始向量号
     uint32 IRQ0_8259A_SLAVE;  // 从片中断起始向量号
 
@@ -1303,6 +1387,7 @@ public:
     // address 中断处理程序的起始地址
     // DPL     中断描述符的特权级
     void setInterruptDescriptor(uint32 index, uint32 address, byte DPL);
+    
     // 开启时钟中断
     void enableTimeInterrupt();
     // 禁止时钟中断
@@ -1336,13 +1421,16 @@ void InterruptManager::initialize8259A()
     asm_out_port(0x21, 1);
     asm_out_port(0xa1, 1);
 
-    // OCW 1 屏蔽从片所有中断，屏蔽主片所有中断，但开启从片中断
+    // OCW 1 屏蔽主片所有中断，但主片的IRQ2需要开启
     asm_out_port(0x21, 0xfb);
+    // OCW 1 屏蔽从片所有中断
     asm_out_port(0xa1, 0xff);
 }
 ```
 
-这里，我们根据之前对ICW和OCW的描述来初始化8259A芯片。`asm_out_port`是对`out`指令的封装，放在`asm_utils.asm`中，如下所示。
+初始化8259A芯片的过程是通过设置一系列的ICW字来完成的。由于我们并未建立处理8259A中断的任何函数，因此在初始化的最后，我们需要屏蔽主片和从片的所有中断。
+
+其中，`asm_out_port`是对`out`指令的封装，放在`asm_utils.asm`中，如下所示。
 
 ```asm
 ; void asm_out_port(uint16 port, uint8 value)
@@ -1387,6 +1475,7 @@ private:
 
 public:
     STDIO();
+    // 初始化函数
     void initialize();
     // 打印字符c，颜色color到位置(x,y)
     void print(uint x, uint y, uint8 c, uint8 color);
@@ -1409,9 +1498,11 @@ public:
 #endif
 ```
 
+代码实现放置在`src/kernel/stdio.cpp`。
+
 三个重载的`print`是直接向显存写入字符和颜色，比较简单，因此不再赘述。
 
-下面我们看看如何处理光标，光标就是屏幕上一直在闪烁的横杠。屏幕的像素为25*80，所以光标的位置从上到下，从左到右依次编号为0-1999，用16位表示。与光标读写相关的端口为`0x3d4`和`0x3d5`，在对光标读写之前，我们需要向端口`0x3d4`写入数据，表明我们操作的是光标的低8位还是高8位。写入`0x0e`，表示操作的是高8位，写入`0x0f`表示操作的是低8位。如果我们需要需要读取光标，那么我们从`0x3d5`从读取数据；如果我们需要更改光标的位置，那么我们将光标的位置写入`0x3d5`，代码放置在`src/io/stdio.cpp`中，如下所示。
+下面我们看看如何处理光标，光标就是屏幕上一直在闪烁的横杠。屏幕的像素为25*80，所以光标的位置从上到下，从左到右依次编号为0-1999，用16位表示。与光标读写相关的端口为`0x3d4`和`0x3d5`，在对光标读写之前，我们需要向端口`0x3d4`写入数据，表明我们操作的是光标的低8位还是高8位。写入`0x0e`，表示操作的是高8位，写入`0x0f`表示操作的是低8位。如果我们需要需要读取光标，那么我们从`0x3d5`从读取数据；如果我们需要更改光标的位置，那么我们将光标的位置写入`0x3d5`。如下所示。
 
 ```cpp
 void STDIO::moveCursor(uint position)
@@ -1481,7 +1572,7 @@ asm_in_port:
     ret
 ```
 
-在`STDIO::print`中，如果我们向光标处写入了字符，我们需要手动移动光标到下一个位置。特别地，如果过光标超出了屏幕的范围，即字符占满了整个屏幕，我们需要向上滚屏，然后将光标放在`(24,0)`处。滚屏实际上就是将第2行的字符放到第1行，第3行的字符放到第2行，以此类推，最后第24行的字符放到了第23行，然后第24行清空，光标放在第24行的起始位置。
+在`STDIO::print`的实现中，我们向光标处写入了字符并移动光标到下一个位置。特别地，如果过光标超出了屏幕的范围，即字符占满了整个屏幕，我们需要向上滚屏，然后将光标放在`(24,0)`处。滚屏实际上就是将第2行的字符放到第1行，第3行的字符放到第2行，以此类推，最后第24行的字符放到了第23行，然后第24行清空，光标放在第24行的起始位置。
 
 实现滚屏的函数是`STDIO::rollUp`，如下所示。
 
@@ -1504,42 +1595,31 @@ void STDIO::rollUp()
 }
 ```
 
-为了可以使用这个类的成员函数，和中断管理器一样，我们在`include/os_mudules.h`中定义这个类的实例，如下所示。
-
-```cpp
-#ifndef OS_MODULES_H
-#define OS_MODULES_H
-
-#include "interrupt.h"
-#include "stdio.h"
-
-InterruptManager interruptManager;
-STDIO stdio;
-
-#endif
-```
-
-由于我们需要显示中断发生的次数，我们需要在`interrupt.cpp`中定义一个变量来充当计数变量，如下所示。
+接下来，我们定义中断处理函数`c_time_interrupt_handler`。由于我们需要显示中断发生的次数，我们需要在`src/kernel/interrupt.cpp`中定义一个全局变量来充当计数变量，如下所示。
 
 ```cpp
 int times = 0;
 ```
 
-其中，`times`是一个全局变量，然后我们定义中断处理函数`c_time_interrupt_handler`，如下所示。
+中断处理函数`c_time_interrupt_handler`如下所示。
 
 ```cpp
-void c_time_interrupt_handler()
+// 中断处理函数
+extern "C" void c_time_interrupt_handler()
 {
+    // 清空屏幕
     for (int i = 0; i < 80; ++i)
     {
         stdio.print(0, i, ' ', 0x07);
     }
 
+    // 输出中断发生的次数
     ++times;
     char str[] = "interrupt happend: ";
     char number[10];
     int temp = times;
 
+    // 将数字转换为字符串表示
     for(int i = 0; i < 10; ++i ) {
         if(temp) {
             number[i] = temp % 10 + '0';
@@ -1549,11 +1629,13 @@ void c_time_interrupt_handler()
         temp /= 10;
     }
 
+    // 移动光标到(0,0)输出字符
     stdio.moveCursor(0);
     for(int i = 0; str[i]; ++i ) {
         stdio.print(str[i]);
     }
 
+    // 输出中断发生的次数
     for( int i = 9; i > 0; --i ) {
         stdio.print(number[i]);
     }
@@ -1562,11 +1644,13 @@ void c_time_interrupt_handler()
 
 `c_time_interrupt_handler`首先清空第一行的字符，然后对计数变量`times`递增1，并将其转换成字符串。我相信，同学们在大一上时已经熟练掌握如何将一个任意进制的数字转换成字符串表示的方法，这里不再赘述。最后再将要显示的字符串打印出来即可。
 
-上面这个函数还不完全是一个中断处理函数，因为我们进入中断后需要保护现场，离开中断需要恢复现场。这里，现场指的是寄存器的内容。但是，C语言并未提供相关指令。最重要的是，中断的返回需要使用`iret`指令，而C语言的任何函数编译出来的返回语句都是`ret`。因此，上面提到的工作我们只能在汇编代码中完成。
+上面这个函数还不完全是一个中断处理函数，因为我们进入中断后需要保护现场，离开中断需要恢复现场。这里，现场指的是寄存器的内容。但是，C语言并未提供相关指令。最重要的是，中断的返回需要使用`iret`指令，而C语言的任何函数编译出来的返回语句都是`ret`。因此，我们只能在汇编代码中完成保护现场、恢复现场和中断返回。
 
-整理下我们的思路，一个中断处理函数的实现思路如下。由于C语言缺少可以编写一个完整的中断处理函数的指令，因此当中断发生后，其首先跳转到汇编实现的代码，然后使用汇编代码保存寄存器的内容。保存现场后，汇编代码调用`call`指令来跳转到C语言编写的中断处理函数主体。C语言编写的函数返回后，指令的执行流程会返回到`call`指令的下一条汇编代码。此时，我们使用汇编代码恢复保存的寄存器的内容，最后使用`iret`返回。
+整理下我们的思路，从而得到一个中断处理函数的实现思路。
 
-一个完整的中断处理函数如下所示，代码保存在`asm_utils.asm`中。
+由于C语言缺少可以编写一个完整的中断处理函数的语法，因此当中断发生后，CPU首先跳转到汇编实现的代码，然后使用汇编代码保存寄存器的内容。保存现场后，汇编代码调用`call`指令来跳转到C语言编写的中断处理函数主体。C语言编写的函数返回后，指令的执行流程会返回到`call`指令的下一条汇编代码。此时，我们使用汇编代码恢复保存的寄存器的内容，最后使用`iret`返回。
+
+一个完整的时钟中断处理函数如下所示，代码保存在`asm_utils.asm`中。
 
 ```asm
 asm_time_interrupt_handler:
@@ -1595,7 +1679,7 @@ void InterruptManager::setTimeInterrupt(void *handler)
 }
 ```
 
-然后我们封装一下开启和关闭时钟中断的函数。关于8259A上的中断开启情况，我们可以通过读取OCW1来得知；如果要修改8259A上的中断开启情况，我们就写入对应的OCW1。
+然后我们封装一下开启和关闭时钟中断的函数。关于8259A上的中断开启情况，我们可以通过读取OCW1来得知；如果要修改8259A上的中断开启情况，我们就需要先读取再写入对应的OCW1。
 
 ```cpp
 void InterruptManager::enableTimeInterrupt()
@@ -1618,7 +1702,7 @@ void InterruptManager::disableTimeInterrupt()
 }
 ```
 
-最后，我们在`setup_kernel`中初始化内核的组件，然后开启时钟中断和开中断。
+最后，我们在`setup_kernel`中定义`STDIO`的实例`stdio`，最后初始化内核的组件，然后开启时钟中断和开中断。
 
 ```cpp
 extern "C" void setup_kernel()
@@ -1634,6 +1718,20 @@ extern "C" void setup_kernel()
 }
 ```
 
+我们在`include/os_modules.h`声明这个实例。
+
+```cpp
+#ifndef OS_MODULES_H
+#define OS_MODULES_H
+
+#include "interrupt.h"
+
+extern InterruptManager interruptManager;
+extern STDIO stdio;
+
+#endif
+```
+
 开中断需要使用`sti`指令，如果不开中断，那么CPU不会响应可屏蔽中断。也就是说，即使8259A芯片发生了时钟中断，CPU也不会处理。开中断指令被封装在函数`asm_enable_interrupt`中，如下所示。
 
 ```asm
@@ -1643,29 +1741,17 @@ asm_enable_interrupt:
     ret
 ```
 
-最后，我们编译代码。由于我们新加入了`STDIO`的函数实现`src/io/stdio.cpp`，我们需要在`makefile`中新增如下语句。
-
-```makefile
-CXX_SOURCE += $(wildcard $(SRCDIR)/io/*.cpp)
-```
-
-记住，我们每增加一个`.cpp`或`.c`文件，我们都要在`makefile`中加上类似的语句，否则在编译时会找不到函数实现。
-
-然后编译代码。
+现在我们编译和运行代码。
 
 ```shell
-make && make build
+make && make run
 ```
 
-最后加载`bochsrc.bxrc`运行，效果如下，第一行显示了中断发生的次数。
+最后加载qemu运行，效果如下，第一行显示了中断发生的次数。
 
-<img src="gallery/assignment-4-1.PNG" alt="assignment-4-1" style="zoom:38%;" />
+<img src="gallery/example-4.png" alt="example-4" style="zoom:38%;" />
 
-<img src="gallery/assignment-4-2.PNG" alt="assignment-4-1" style="zoom:38%;" />
-
-> 本节的内容有点多，同学们请仔细体会:sweat_smile:。
-
-# 练习
+# 课后思考题（不需要完成）
 
 1. 请用自己的话描述C代码到C程序的过程。
 
@@ -1702,7 +1788,5 @@ make && make build
 
 11. 请谈谈你对本教程的看法。
 
-# Bonus
-
-1. 请使用时钟中断来在屏幕的第一行实现一个跑马灯显示自己学号和英文名的效果，类似于LED屏幕显示的效果。
+12. 请使用时钟中断来在屏幕的第一行实现一个跑马灯显示自己学号和英文名的效果，类似于LED屏幕显示的效果。
 

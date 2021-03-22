@@ -6,11 +6,13 @@ global asm_unhandled_interrupt
 global asm_halt
 
 ASM_UNHANDLED_INTERRUPT_INFO db 'Unhandled interrupt happened, halt...'
+                             db 0
 ASM_IDTR dw 0
          dd 0
 
 ; void asm_unhandled_interrupt()
 asm_unhandled_interrupt:
+    cli
     mov esi, ASM_UNHANDLED_INTERRUPT_INFO
     xor ebx, ebx
     mov ah, 0x03
@@ -83,5 +85,4 @@ asm_hello_world:
     ret
 
 asm_halt:
-    cli   ; 关中断
     jmp $

@@ -39,7 +39,7 @@ kernel.bin : entry.obj $(OBJ)
 kernel.o : entry.obj $(OBJ)
 	$(LINKER) -o kernel.o -melf_i386 -N entry.obj $(OBJ) -e enter_kernel -Ttext 0x00020000
 	
-$(CXX_OBJ):
+$(CXX_OBJ): $(CXX_SOURCE)
 	$(CXX_COMPLIER) $(CXX_COMPLIER_FLAGS) -I$(INCLUDE_PATH) -c $(CXX_SOURCE)
 	
 asm_utils.o : $(SRCDIR)/utils/asm_utils.asm
