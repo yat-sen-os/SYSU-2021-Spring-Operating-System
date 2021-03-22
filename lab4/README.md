@@ -1217,7 +1217,7 @@ make && make run
 
 我们可以看到中断被正常调用。
 
-<img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab4/gallery/example-3-1.png" alt="example-3-1" style="zoom:67%;" />
+<img src="gallery/example-3-1.png" alt="example-3-1" style="zoom:50%;" />
 
 至此，我们已经完成了IDT的初始化。
 
