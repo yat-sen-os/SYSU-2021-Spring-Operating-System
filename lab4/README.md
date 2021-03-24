@@ -470,7 +470,7 @@ g++ -o main.out main.o c_func.o cpp_func.o asm_func.o -m32
 + `project/run`。存放gdb配置文件，硬盘映像`.img`文件等。
 + `project/src`。存放`.c`，`.cpp`等函数实现的文件。
 
-例如`assignment-2`的文件目录如下。
+例如`example-2`的文件目录如下。
 
 ```shell
 ├── build
