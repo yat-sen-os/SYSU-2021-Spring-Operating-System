@@ -1,3 +1,4 @@
 target remote:1234
 set disassembly-flavor intel
-set architecture i386
+add-symbol-file mbr.symbol 0x7c00
+add-symbol-file bootloader.symbol 0x7c00

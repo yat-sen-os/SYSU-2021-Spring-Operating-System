@@ -837,68 +837,9 @@ add bx, 512
 
 至此，我们已经完成了本次实验的全部内容，同学们注意仔细体会。
 
-# Makefile的使用（预告）
+# GDB的使用
 
-在Example 2中，我们首先需要使用以下两条命令编译`mbr.asm`，`bootloader.asm`为二进制文件。
-
-```shell
-nasm -f bin mbr.asm -o mbr.bin
-nasm -f bin bootloader.asm -o bootloader.bin
-```
-
-然后写入`hd.img`。
-
-```shell
-dd if=mbr.bin of=hd.img bs=512 count=1 seek=0 conv=notrunc
-dd if=bootloader.bin of=hd.img bs=512 count=5 seek=1 conv=notrunc
-```
-
-最后使用qemu执行。
-
-```shell
-qemu-system-i386 -hda hd.img -serial null -parallel stdio 
-```
-
-如果要使用gdb，则会涉及更多的命令。在大多数情况下，我们编写的程序不一定会一次就成功，需要反复多次地debug。如果我们每做一次调整，就要输入上面一大堆命令，这无疑会大大降低我们的开发效率。那么，有没有可能输入尽可能少的命令就能达到相同的效果呢？答案是有的，就是把上面的命令都写入到一个文件中，然后使用命令`make`就能让系统顺序执行预先定义的命令。这个文件被称为Makefile，Makefile在后面将成为编译我们操作系统代码的强有力工具，能够大大提高我们的开发效率。同学们已经在lab2-assignment 3中已经用过了makefile。关于makefile的学习，同学们可以参考[(http://c.biancheng.net/makefile/]。
-
-此时，example-2的makefile的简单示例如下。
-
-```makefile
-run:
-	@qemu-system-i386 -hda hd.img -serial null -parallel stdio 
-debug:
-	@qemu-system-i386 -s -S -hda hd.img -serial null -parallel stdio &
-	@sleep 1
-	@gnome-terminal -e "gdb -q -x gdbinit"
-build:
-	@nasm -f bin mbr.asm -o mbr.bin
-	@nasm -f bin bootloader.asm -o bootloader.bin
-	@dd if=mbr.bin of=hd.img bs=512 count=1 seek=0 conv=notrunc
-	@dd if=bootloader.bin of=hd.img bs=512 count=5 seek=1 conv=notrunc
-clean:
-	@rm *.bin
-```
-
-在Terminal输入不同的make命令的执行结果不同，如下所示。
-
-+ `make`或`make run`。使用qemu启动`hd.img`，在此命令执行前应该执行`make build`。
-+ `make debug`。启动qemu并开启gdb调试。
-+ `make build`。编译代码并写入`hd.img`。
-+ `make clean`。清除当前文件夹下以`.bin`结尾的文件。
-
-值得注意的是，gdb的命令也可以预先写入到文件中，在启动gdb后自动加载执行，例如我们把gdb的初始化命令写入文件`gdbinit`中，如下所示。
-
-```
-target remote:1234
-set disassembly-flavor intel
-set architecture i386
-```
-
-当gdb启动后，gdb就会自动连接qemu，将反汇编的代码格式设置为intel风格，最后设置运行代码的处理架构为`i386`。注意，如果你在16位的环境下debug，处理器架构需要设置为`i8086`，即
-
-```
-set architecture i8086
-```
+参考Appendix-A。
 
 # 课后思考题（不需要完成）
 
