@@ -5,8 +5,8 @@
 + `x/FMT address`最后两个关于pc和esp的实例在gitee上显示有问题，实际的命令如下。
 
   ```
-  x/10i $pc
-  x/12xw $esp
+  x/10i $pc(显示当前指令后面的10条汇编指令，包括当前指令)
+  x/12xw $esp(显示栈中的12个字，以16进制显示)
   ```
 
 # gdb+qemu的debug方法
@@ -28,24 +28,24 @@
 
 # 常用的gdb调试指令
 
-| gdb指令                          | 含义                                                         | 实例                                                         |
-| -------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| break *adress或b *address        | 在地址adress处设置断点。                                     | break *0x7c00<br>b *0x7c00                                   |
-| break symbol或b symbol           | 在符号symbol处设置断点，例如symbol一般是函数名。             | break setup\_kernel<br>b setup\_kernel                       |
-| break filename:line\_number      | 在文件filename处的第line_numer行设置断点                     | b mbr.asm:12                                                 |
-| add-symbol-file filename address | 加载符号表filename到地址address处                            | add-symbol-file mbr.symbol 0x7c00                            |
-| x/FMT address                    | address是内存地址，FMT格式是重复的单元个数+格式+大小。<br/>重复的单元个数是一个数字，表示我们希望查看多少个单元。正数表示从address向后查看。负数表示从address向前查看。<br/>格式是一个字符，可以是o(octal), x(hex), d(decimal), u(unsigned decimal), t(binary), f(float), a(address), i(instruction), c(char), s(string)。<br/>大小是一个字符，可以是b(byte, 1 byte), h(halfword, 2 byte), w(word, 4 byte), g(giant, 8 bytes)。 | x/5xw 0x8032(显示从0x8032开始的5个字，以16进制显示)<br/>x/10i 0x7c00(显示从0x7c00开始的10条汇编指令)<br/>x/10i $pc(显示当前指令后面的10条汇编指令，包括当前指令)<br/>x/12xw \$esp(显示栈中的12个字，以16进制显示) |
-| continue或c                      | 继续执行正在调试的程序到断点处暂停。                         |                                                              |
-| step或s                          | 执行一条C语句，如果遇到函数调用语句，则会进入函数体中。      |                                                              |
-| next或n                          | 执行一条C语句，函数调用语句不会进入函数体，把函数当成一条语句执行。 |                                                              |
-| stepi或si                        | 执行一条汇编语句，如果遇到函数调用语句，则会进入函数体中。   |                                                              |
-| nexti或ni                        | 执行一条汇编语句，函数调用语句不会进入函数体，把函数当成一条语句执行。 |                                                              |
-| info registers                   | 查看所有寄存器的值                                           |                                                              |
-| layout layout\_name              | layout\_name包含src，asm，split，regs。<br/>src显示源代码窗口和命令窗口，asm显示汇编代码窗口和命令窗口，split显示源代码窗口、汇编代码窗口和命令窗口，regs显示寄存器窗口。 | layout split                                                 |
-| focus layout\_window             | 转换当前窗口到layout窗口，layout\_window包含src，asm，regs，cmd。任何时刻gdb的当前窗口只有一个，并且使用方向键的效果只会在当前窗口处显示。<bt/> | focus cmd                                                    |
-| file symbol\_file                | 加载符号表，为gdb提供debug信息。                             | file ../build/kernel.o                                       |
-| set disassembly-flavor intel     | 设置汇编代码格式为intel风格                                  |                                                              |
-| set architecture name            | 设置指令对应的CPU架构，name包含i8086(16位)，i386(32位)       | set architecture i386                                        |
+| gdb指令                          | 含义                                                         | 实例                                   |
+| -------------------------------- | ------------------------------------------------------------ | -------------------------------------- |
+| break *adress或b *address        | 在地址adress处设置断点。                                     | break *0x7c00<br>b *0x7c00             |
+| break symbol或b symbol           | 在符号symbol处设置断点，例如symbol一般是函数名。             | break setup\_kernel<br>b setup\_kernel |
+| break filename:line\_number      | 在文件filename处的第line_numer行设置断点                     | b mbr.asm:12                           |
+| add-symbol-file filename address | 加载符号表filename到地址address处                            | add-symbol-file mbr.symbol 0x7c00      |
+| x/FMT address                    | address是内存地址，FMT格式是重复的单元个数+格式+大小。<br/>重复的单元个数是一个数字，表示我们希望查看多少个单元。正数表示从address向后查看。负数表示从address向前查看。<br/>格式是一个字符，可以是o(octal), x(hex), d(decimal), u(unsigned decimal), t(binary), f(float), a(address), i(instruction), c(char), s(string)。<br/>大小是一个字符，可以是b(byte, 1 byte), h(halfword, 2 byte), w(word, 4 byte), g(giant, 8 bytes)。 | x/5xw 0x8032<br/>x/10i 0x7c00          |
+| continue或c                      | 继续执行正在调试的程序到断点处暂停。                         |                                        |
+| step或s                          | 执行一条C语句，如果遇到函数调用语句，则会进入函数体中。      |                                        |
+| next或n                          | 执行一条C语句，函数调用语句不会进入函数体，把函数当成一条语句执行。 |                                        |
+| stepi或si                        | 执行一条汇编语句，如果遇到函数调用语句，则会进入函数体中。   |                                        |
+| nexti或ni                        | 执行一条汇编语句，函数调用语句不会进入函数体，把函数当成一条语句执行。 |                                        |
+| info registers                   | 查看所有寄存器的值                                           |                                        |
+| layout layout\_name              | layout\_name包含src，asm，split，regs。<br/>src显示源代码窗口和命令窗口，asm显示汇编代码窗口和命令窗口，split显示源代码窗口、汇编代码窗口和命令窗口，regs显示寄存器窗口。 | layout split                           |
+| focus layout\_window             | 转换当前窗口到layout窗口，layout\_window包含src，asm，regs，cmd。任何时刻gdb的当前窗口只有一个，并且使用方向键的效果只会在当前窗口处显示。<bt/> | focus cmd                              |
+| file symbol\_file                | 加载符号表，为gdb提供debug信息。                             | file ../build/kernel.o                 |
+| set disassembly-flavor intel     | 设置汇编代码格式为intel风格                                  |                                        |
+| set architecture name            | 设置指令对应的CPU架构，name包含i8086(16位)，i386(32位)       | set architecture i386                  |
 
 # 汇编代码
 
