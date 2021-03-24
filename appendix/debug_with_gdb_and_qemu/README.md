@@ -2,6 +2,13 @@
 
 + 经过测试后发现，在gdb 8或者更高的版本中，`set architecture i8086`执行后，使用形如`x/10i $pc`的语句反汇编的代码仍然是32位，不是期望的16位代码。因此，我们下面使用加载符号表的方式来显示我们的汇编源代码。在 gdb 7.12下则无上述问题。
 
++ `x/FMT address`最后两个关于pc和esp的实例在gitee上显示有问题，实际的命令如下。
+
+  ```
+  x/10i $pc
+  x/12xw $esp
+  ```
+
 # gdb+qemu的debug方法
 
 虽然网上关于gdb的教程非常多，但大多数教程都是介绍如何使用gdb来调试一个运行在特定的操作系统上的程序，关于如何使用gdb来调试操作系统开发的代码则是凤毛麟角。例如，关于如何对C语言的代码进行单步跟踪提的很多，但关于对汇编的代码进行单步跟踪提的很少。因此，在本章中，我们将会通过3个简单的例子来学习如何使用gdb和qemu来调试我们的操作系统代码。
@@ -27,7 +34,7 @@
 | break symbol或b symbol           | 在符号symbol处设置断点，例如symbol一般是函数名。             | break setup\_kernel<br>b setup\_kernel                       |
 | break filename:line\_number      | 在文件filename处的第line_numer行设置断点                     | b mbr.asm:12                                                 |
 | add-symbol-file filename address | 加载符号表filename到地址address处                            | add-symbol-file mbr.symbol 0x7c00                            |
-| x/FMT address                    | address是内存地址，FMT格式是重复的单元个数+格式+大小。<br/>重复的单元个数是一个数字，表示我们希望查看多少个单元。正数表示从address向后查看。负数表示从address向前查看。<br/>格式是一个字符，可以是o(octal), x(hex), d(decimal), u(unsigned decimal), t(binary), f(float), a(address), i(instruction), c(char), s(string)。<br/>大小是一个字符，可以是b(byte, 1 byte), h(halfword, 2 byte), w(word, 4 byte), g(giant, 8 bytes)。 | x/5xw 0x8032(显示从0x8032开始的5个字，以16进制显示)<br/>x/10i 0x7c00(显示从0x7c00开始的10条汇编指令)<br/>$x/10i\ \$pc$(显示当前指令后面的10条汇编指令，包括当前指令)<br/>$x/12xw\ \$esp$(显示栈中的12个字，以16进制显示) |
+| x/FMT address                    | address是内存地址，FMT格式是重复的单元个数+格式+大小。<br/>重复的单元个数是一个数字，表示我们希望查看多少个单元。正数表示从address向后查看。负数表示从address向前查看。<br/>格式是一个字符，可以是o(octal), x(hex), d(decimal), u(unsigned decimal), t(binary), f(float), a(address), i(instruction), c(char), s(string)。<br/>大小是一个字符，可以是b(byte, 1 byte), h(halfword, 2 byte), w(word, 4 byte), g(giant, 8 bytes)。 | x/5xw 0x8032(显示从0x8032开始的5个字，以16进制显示)<br/>x/10i 0x7c00(显示从0x7c00开始的10条汇编指令)<br/>x/10i $pc(显示当前指令后面的10条汇编指令，包括当前指令)<br/>x/12xw \$esp(显示栈中的12个字，以16进制显示) |
 | continue或c                      | 继续执行正在调试的程序到断点处暂停。                         |                                                              |
 | step或s                          | 执行一条C语句，如果遇到函数调用语句，则会进入函数体中。      |                                                              |
 | next或n                          | 执行一条C语句，函数调用语句不会进入函数体，把函数当成一条语句执行。 |                                                              |
@@ -225,11 +232,9 @@ build:
 	@nasm -g -f elf32 mbr.asm -o mbr.o
 	@ld -o mbr.symbol -melf_i386 -N mbr.o -Ttext 0x7c00
 	@ld -o mbr.bin -melf_i386 -N mbr.o -Ttext 0x7c00 --oformat binary
-
 	@nasm -g -f elf32 bootloader.asm -o bootloader.o
 	@ld -o bootloader.symbol -melf_i386 -N bootloader.o -Ttext 0x7e00
 	@ld -o bootloader.bin -melf_i386 -N bootloader.o -Ttext 0x7e00 --oformat binary
-
 	@dd if=mbr.bin of=hd.img bs=512 count=1 seek=0 conv=notrunc
 	@dd if=bootloader.bin of=hd.img bs=512 count=5 seek=1 conv=notrunc
 clean:
