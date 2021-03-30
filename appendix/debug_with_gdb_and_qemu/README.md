@@ -2,12 +2,80 @@
 
 + 经过测试后发现，在gdb 8或者更高的版本中，`set architecture i8086`执行后，使用形如`x/10i $pc`的语句反汇编的代码仍然是32位，不是期望的16位代码。因此，我们下面使用加载符号表的方式来显示我们的汇编源代码。在 gdb 7.12下则无上述问题。
 
++ 对于nasm版本不是2.15的同学，我们需要安装2.15版本的nasm。
+
 + `x/FMT address`最后两个关于pc和esp的实例在gitee上显示有问题，实际的命令如下。
 
   ```
   x/10i $pc(显示当前指令后面的10条汇编指令，包括当前指令)
   x/12xw $esp(显示栈中的12个字，以16进制显示)
   ```
+
+# 安装2.15版本的Nasm
+
+对于使用Ubuntu 18.04的同学来说，我们使用命令`sudo apt install nasm`安装的nasm版本默认是`2.13`的。我们可以使用命令`nasm -v`来查看我们的nasm的版本。
+
+<img src="gallery/10.png" alt="1" style="zoom:80%;" />
+
+在本章中，我们给出的方法是使用加载符号表的方式来显示汇编源代码。对于`2.13`版本的`nasm`来说，我们即使加上了`-g`参数生成的带debug信息的文件，如`mbr.symbol`等，生成的文件也不包含有关于代码行号的debug信息。简单来说，如果我们使用了`2.13`版本的nasm生成的文件来debug，那么我们无法在`src`窗口下显示汇编代码，而在`2.15`版本的nasm中则没有这个问题。
+
+因此，对于nasm版本不是`2.15`的同学，我们需要按如下方式来安装`2.15`版本的nasm。`2.15`版本的nasm已经放在了项目的`env`文件夹下。
+
+你可以将`env/nasm-2.15.05.tar.xz`移动到任何你喜欢的文件夹，作为示例，我们不妨移动到`~/env`文件夹下。
+
+<img src="gallery/11.png" alt="1" style="zoom:90%;" />
+
+在`~/env`文件夹下，我们先将`nasm-2.15.05.tar.xz`解压出来。
+
+```shell
+tar -xvf nasm-2.15.05.tar.xz
+```
+
+<img src="gallery/12.png" alt="1" style="zoom:90%;" />
+
+进入解压出的文件夹。
+
+```shell
+cd nasm-2.15.05
+```
+
+<img src="gallery/13.png" alt="1" style="zoom:90%;" />
+
+执行如下命令，可以看到一大堆的`checking`。
+
+```shell
+./configure
+```
+
+<img src="gallery/14.png" alt="1" style="zoom:90%;" />
+
+上一步执行完成后，执行make命令，可以看到满屏的编译命令。
+
+```
+make
+```
+
+<img src="gallery/15.png" alt="1" style="zoom:90%;" />
+
+上一步执行完成后，安装nasm
+
+```
+sudo make install
+```
+
+<img src="gallery/16.png" alt="1" style="zoom:90%;" />
+
+最后我们查看nasm的版本。
+
+```
+nasm -v
+```
+
+<img src="gallery/17.png" alt="1" style="zoom:90%;" />
+
+至此，妈妈再也不用担心我的gdb无法显示源代码了，gdb 8还可以显示中文呢。
+
+![18](gallery/18.png)
 
 # gdb+qemu的debug方法
 
