@@ -222,16 +222,16 @@ typedef char *va_list;
 #define va_end(ap) (ap = (va_list)0)
 
 
-void function(int n, ...);
+void print_any_number_of_integers(int n, ...);
 
 int main()
 {
-    function(1, 213);
-    function(2, 234, 2567);
-    function(3, 487, -12, 0);
+    print_any_number_of_integers(1, 213);
+    print_any_number_of_integers(2, 234, 2567);
+    print_any_number_of_integers(3, 487, -12, 0);
 }
 
-void function(int n, ...)
+void print_any_number_of_integers(int n, ...)
 {
     // 定义一个指向可变参数的指针parameter
     va_list parameter;
@@ -266,7 +266,7 @@ g++ main.cpp -m32 -std=c++98 -o main.out && ./main.out
 487 -12 0
 ```
 
-此时，我们并未引入头文件`<stdarg.h>`，这说明了我们已经成功实现了可变参数机制。
+此时，我们并未引入头文件`<stdarg.h>`，这说明了我们已经成功实现了可变参数机制。借助于我们实现的可变参数机制，我们接下来实现`printf`。
 
 ## 实现printf
 
@@ -278,9 +278,9 @@ int printf(const char *const fmt, ...);
 
 在格式化输出字符串中，会包含`%c,%d,%x,%s`等来实现格式化输出，对应的参数在可变参数中可以找到。明白了printf的作用，printf的实现便迎刃而解，实现思路如下。
 
-printf首先找到fmt中的形如`%c,%d,%x,%s`对应的参数，然后用这些参数具体的值来替换`%c,%d,%x,%s`等，得到一个新的格式化输出字符串，称为fmt的解析，最后将这个新的格式化输出字符串即可。但是，这个字符串可能非常大，会超过函数调用栈的大小。因此我们实际上会定义一个缓冲区，然后对fmt进行逐字符地解析，将结果逐字符的放到缓冲区中。放入一个字符后，我们会检查缓冲区，如果缓冲区已满，则将其输出，然后清空缓冲区，否则不做处理。
+printf首先找到fmt中的形如`%c,%d,%x,%s`对应的参数，然后用这些参数具体的值来替换`%c,%d,%x,%s`等，得到一个新的格式化输出字符串，这个过程称为fmt的解析。最后，printf将这个新的格式化输出字符串即可。然而，这个字符串可能非常大，会超过函数调用栈的大小。实际上，我们会定义一个缓冲区，然后对fmt进行逐字符地解析，将结果逐字符的放到缓冲区中。放入一个字符后，我们会检查缓冲区，如果缓冲区已满，则将其输出，然后清空缓冲区，否则不做处理。
 
-在实现printf前，我们需要一个能够输出字符串的函数，这个函数能够正确处理字符串中的`\n`换行字符。这里，有同学会产生疑问，`\n`不是直接输出就可以了吗？其实`\n`的换行效果是我们人为规定的，换行的实现需要我们把光标放到下一行的起始位置，如果光标超过了屏幕的表示范围，则需要滚屏。因此，我们实现一个能够输出字符串的函数`STDIO::print`，声明和实现分别放在`include/stdio.h`和`src/io/stdio.cpp`中，如下所示。
+在实现printf前，我们需要一个能够输出字符串的函数，这个函数能够正确处理字符串中的`\n`换行字符。这里，有同学会产生疑问，`\n`不是直接输出就可以了吗？其实`\n`的换行效果是我们人为规定的，换行的实现需要我们把光标放到下一行的起始位置，如果光标超过了屏幕的表示范围，则需要滚屏。因此，我们实现一个能够输出字符串的函数`STDIO::print`，声明和实现分别放在`include/stdio.h`和`src/kernel/stdio.cpp`中，如下所示。
 
 ```cpp
 int STDIO::print(const char *const str)
@@ -326,7 +326,7 @@ int STDIO::print(const char *const str)
 | %s   | 输出一个字符串   |
 | %x   | 按16进制输出     |
 
-printf的实现如下。
+按照前面描述的过程，printf的实现如下。
 
 ```cpp
 int printf(const char *const fmt, ...)
@@ -403,9 +403,9 @@ int printf(const char *const fmt, ...)
 }
 ```
 
-首先我们定义一个大小为`BUF_LEN`的缓冲区`buffer`，`buffer`多出来的1个字符是用来放置`\0`的。由于我们后面会将一个整数转化为字符串表示，`number`使用来存放转换后的字符串的。
+首先我们定义一个大小为`BUF_LEN`的缓冲区`buffer`，`buffer`多出来的1个字符是用来放置`\0`的。由于我们后面会将一个整数转化为字符串表示，`number`使用来存放转换后的数字字符串。由于保护模式是运行在32位环境下的，最大的数字字符串也不会超过32位，因此number分配33个字节也就足够了。
 
-接着我们开始对`fmt`进行逐字符解析，对于每一个字符`fmt[i]`，如果`fmt[i]`不是`%`，则说明是普通字符，直接放到缓冲区即可。注意，将`fmt[i]`放到缓冲区后可能会使缓冲区变满，此时如果缓冲区满，则将缓冲区输出并清空，上述过程写成一个函数来实现，如下所示。
+接着我们开始对`fmt`进行逐字符解析，对于每一个字符`fmt[i]`，如果`fmt[i]`不是`%`，则说明是普通字符，直接放到缓冲区即可。注意，将`fmt[i]`放到缓冲区后可能会使缓冲区变满，此时如果缓冲区满，则将缓冲区输出并清空，我们不妨上述过程写成一个函数来实现，如下所示。
 
 ```cpp
 int printf_add_to_buffer(char *buffer, char c, int &idx, const int BUF_LEN)
@@ -435,16 +435,31 @@ int printf_add_to_buffer(char *buffer, char c, int &idx, const int BUF_LEN)
 + `%x`。输出`ap`指向的数字对应的16进制表示。
 + 其他。不做任何处理。
 
-一个数字向任意进制表示的字符串的转换函数如下所示，声明放置在`include/stdlib.h`中，实现放置在`src/utils/stdlib.cpp`中。
+对于`%d`和`%x`，我们需要将数字转换为对应的字符串。一个数字向任意进制表示的字符串的转换函数如下所示，声明放置在`include/stdlib.h`中，实现放置在`src/utils/stdlib.cpp`中。
 
 ```cpp
-int itos(char *numStr, int num, int mod) {
+/*
+ * 将一个非负整数转换为指定进制表示的字符串。
+ * num: 待转换的非负整数。
+ * mod: 进制。
+ * numStr: 保存转换后的字符串，其中，numStr[0]保存的是num的高位数字，以此类推。
+ */
+
+void itos(char *numStr, uint32 num, uint32 mod);
+```
+
+```cpp
+void itos(char *numStr, uint32 num, uint32 mod) {
+    numStr[0] = '\0';
+
+    // 只能转换2~26进制的整数
     if (mod < 2 || mod > 26 || num < 0) {
-        return -1;
+        return;
     }
 
-    int length, temp;
+    uint32 length, temp;
 
+    // 进制转换
     length = 0;
     while(num) {
         temp = num % mod;
@@ -453,25 +468,53 @@ int itos(char *numStr, int num, int mod) {
         ++length;
     }
 
+    // 特别处理num=0的情况
     if(!length) {
         numStr[0] = '0';
         ++length;
     }
 
-    return length;
+    // 将字符串倒转，使得numStr[0]保存的是num的高位数字
+    for(int i = 0, j = length - 1; i < j; ++i, --j) {
+        swap(numStr[i], numStr[j]);
+    }
 }
 ```
 
-最后，当我们逐字符解析完`fmt`后，`buffer`中可能还会有未输出的字符，我们要将其输出，然后返回输出的总字符`counter`。
+其中，`swap`函数也是声明在`include/stdlib.h`，实现在`src/utils/stdlib.cpp`中。
+
+```cpp
+template<typename T>
+void swap(T &x, T &y);
+```
+
+```cpp
+template<typename T>
+void swap(T &x, T &y) {
+    T z = x;
+    x = y;
+    y = z;
+}
+```
+
+上述函数比较简单，我们不再赘述。
+
+由于`itos`转换的是非负整数，对于`%d`的情况，如果我们输出的整数是负数，那么就要使用`itos`转换其相反数，在输出数字字符串前输出一个负号。
+
+最后，当我们逐字符解析完`fmt`后，`buffer`中可能还会有未输出的字符，我们要将缓冲区的字符全部输出，返回输出的总字符`counter`。
 
 接下来我们测试这个函数，我们在`setup_kernel`中加入对应的测试语句。
 
 ```cpp
-#include "os_type.h"
-#include "os_modules.h"
 #include "asm_utils.h"
+#include "interrupt.h"
 #include "stdio.h"
-#include "stdlib.h"
+
+// 屏幕IO处理器
+STDIO stdio;
+// 中断管理器
+InterruptManager interruptManager;
+
 
 extern "C" void setup_kernel()
 {
@@ -491,9 +534,43 @@ extern "C" void setup_kernel()
     //uint a = 1 / 0;
     asm_halt();
 }
+
 ```
 
-然后编译运行，输出如下结果。
+然后修改makefile。
+
+```makefile
+...
+
+RUNDIR = ../run
+BUILDDIR = build
+INCLUDE_PATH = ../include
+
+
+KERNEL_SOURCE = $(wildcard $(SRCDIR)/kernel/*.cpp)
+CXX_SOURCE += $(KERNEL_SOURCE)
+CXX_OBJ += $(KERNEL_SOURCE:$(SRCDIR)/kernel/%.cpp=%.o)
+
+UTILS_SOURCE = $(wildcard $(SRCDIR)/utils/*.cpp)
+CXX_SOURCE += $(UTILS_SOURCE)
+CXX_OBJ += $(UTILS_SOURCE:$(SRCDIR)/utils/%.cpp=%.o)
+
+ASM_SOURCE += $(wildcard $(SRCDIR)/utils/*.asm)
+ASM_OBJ += $(ASM_SOURCE:$(SRCDIR)/utils/%.asm=%.o)
+
+OBJ += $(CXX_OBJ)
+OBJ += $(ASM_OBJ)
+
+...
+```
+
+编译运行，输出如下结果。
+
+```shell
+make && make run
+```
+
+
 
 <img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第4章 二级分页机制/gallery/printf的实现.PNG" alt="printf的实现" style="zoom:38%;" />
 
