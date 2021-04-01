@@ -1,8 +1,8 @@
 # 实验要求
 
 + gdb查看可变参数的例子。
-
-  
++ printf %d %x
++ 线程调度算法。
 
 # 参考资料
 
@@ -570,10 +570,587 @@ OBJ += $(ASM_OBJ)
 make && make run
 ```
 
-
-
 <img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第4章 二级分页机制/gallery/printf的实现.PNG" alt="printf的实现" style="zoom:38%;" />
 
 至此，我们实现了一个简单的`printf`函数。
 
 > 此后，我们就可以愉快地使用printf来debug啦~
+
+# 内存管理的内容
+
+# 内核线程
+
+## 程序、进程和线程
+
+程序、进程和线程的区别常常令人混淆，这里我们简要地区分一下。
+
++ 程序是指静态的、存储在文件系统上的、尚未运行的指令代码，它是实际运行时的程序的映像。
+
++ 进程是指正在运行的程序，即进行中的程序，程序必须在获得运行所需要的各类资源后才可以成为进程，资源包括进程所使用的栈，寄存器等。
+
++ 线程实际上是函数的载体，属于创建它的进程。进程创建的所有线程共享进程所拥有的全部资源。
+
+## 用户线程和内核线程
+
+用户线程指线程只由用户进程来实现，操作系统中无线程机制。在用户空间中实现线程的好处是可移植性强，由于是用户级的实现，所以在不支持线程的操作系统上也可以写出完美支持线程的用户程序。但是，用户线程存在以下缺点。
+
++ 若进程中的某个线程出现了阻塞， 操作系统不知道进程中存在线程，因此会将整个进程挂起，导致进程中的全部线程都无法运行。
++ 对于操作系统来说，调度器的调度单元是整个进程，并不是进程中的线程，所以时钟中断只能影响进程一级的执行流。当时钟中断发生后，操作系统的调度器只能感知到进程一级的调度实体，它要么把处理器交给进程 A，要么交给进程 B，绝不可能交给进程中的某个线程  。因此，但凡进程中的某个线程开始在处理器上执行后，只要该线程不主动让出处理器，此进程中的其他线程都没机会运行。同时， 由于整个进程占据处理器的时间片是有限的， 这有限的时间片还要再分给内部的线程，所以每个线程执行的时间片非常非常短暂，再加上进程内线程调度器维护线程表、运行调度算法的时间片消耗，反而抵销了内部调度带来的提速。  
+
+所以，为了最大地发挥线程的价值，我们选择了在内核中实现线程机制。内核线程具有以下特点。
+
++ 相比在用户空间中实现线程，内核提供的线程相当于让进程多占了处理器资源，比如系统中运行有进程 A和一传统型进程B（无内核线程，用户线程机制）。假设进程A中显式地创建了3个线程，这样一来，进程A加上主线程便有了4个线程，加上进程B，在内核调度器眼中便有了5个独立的执行流。尽管其中4个线程都属于进程A，但对调度器来说这4个线程和进程一样被调度，因此调度器调度完一圈后，进程A使用了 80%的处理器资源，这才是真正的提速。
++ 另一方面的优点是当进程中的某一线程阻塞后，由于线程是由内核空间实现的，操作系统认识线程，所以就只会阻塞这一个线程，此线程所在进程内的其他线程将不受影响，这又相当于提速了。
++ 用户进程需要通过系统调用陷入内核，这多少增加了一些现场保护的栈操作，这还是会消耗一些处理器时间，但和上面的大幅度提速相比，这显然是微不足道的。  
+
+## 线程的描述
+
+线程的组成部分有操作系统为线程分配的栈，状态，优先级，运行时间，线程负责运行的函数，函数的参数等，这些组成部分被集中保存在一个结构中——PCB(Process Control Block)，如下所示，代码放在`include/thread.h`中。
+
+```cpp
+enum ThreadStatus
+{
+    CREATE,
+    RUNNING,
+    READY,
+    BLOCKED,
+    DEAD
+};
+
+struct PCB
+{
+    int *stack;                      // 栈指针，用于调度时保存esp
+    char name[MAX_PROGRAM_NAME + 1]; // 线程名
+    enum ThreadStatus status;        // 线程的状态
+    int priority;                   // 线程优先级
+    int pid;                       // 线程pid
+    int ticks;                     // 线程时间片总时间
+    int ticksPassedBy;             // 线程已执行时间
+    ListItem tagInGeneralList; // 线程队列标识
+    ListItem tagInAllList;     // 线程队列标识
+};
+```
+
+我们来看PCB各成员的含义。
+
++ `stack`。各个内核线程是共享内核空间的，但又相对独立，这种独立性体现在每一个线程都有自己的栈。那么线程的栈保存在哪里呢？线程的栈就保存在线程的PCB中，我们会为每一个PCB分配一个页。上面的`struct PCB`只是这个页的低地址部份，线程的栈指针从这个页的结束位置向下递减，如下所示。
+
+  <img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/TCB栈.png" alt="TCB栈" style="zoom:30%;" />
+
+  因此，我们不能向线程的栈中放入太多的东西，否则当栈指针向下扩展时，会与线程的PCB的信息发生覆盖，最终导致错误。`stack`的作用是在线程被换下处理器时保存esp的内容，然后当线程被换上处理器后，我们用`stack`去替换esp的内容，从而实现恢复线程运行的效果。
+
++ `status`是线程的状态，如运行态、阻塞态和就绪态等。
+
++ `name`是线程的名称。
+
++ `priority`是线程的优先级，线程的优先级决定了抢占式调度的过程和线程的执行时间。
+
++ `pid`是线程的标识符，每一个线程的pid都是唯一的。
+
++ `ticks`是线程剩余的执行次数。在时间片调度算法中，每发生中断一次记为一个`tick`，当`ticks=0`时，线程会被换下处理器，然后将其他线程换上处理器执行。
+
++ `ticksPassedBy`是线程总共执行的`tick`的次数。
+
++ `tagInGeneralList`和`tagInAllList`是线程在线程队列中的标识，用于在线程队列中找到线程的PCB。
+
+其中，`ListItem`是链表`List`中的元素的表示，如下所示，代码放置在`list.h`中。
+
+```cpp
+struct ListItem
+{
+    ListItem *previous;
+    ListItem *next;
+};
+```
+
+`List`是一个带头节点的双向链表，定义如下。
+
+```cpp
+class List
+{
+public:
+    ListItem head;
+
+public:
+    // 初始化List
+    List();
+    // 显式初始化List
+    void initialize();
+    // 返回List元素个数
+    int size();
+    // 返回List是否为空
+    bool empty();
+    // 返回指向List最后一个元素的指针
+    // 若没有，则返回nullptr
+    ListItem *back();
+    // 将一个元素加入到List的结尾
+    void push_back(ListItem *itemPtr);
+    // 删除List最后一个元素
+    void pop_back();
+    // 返回指向List第一个元素的指针
+    // 若没有，则返回nullptr
+    ListItem *front();
+    // 将一个元素加入到List的头部
+    void push_front(ListItem *itemPtr);
+    // 删除List第一个元素
+    void pop_front();
+    // 将一个元素插入到pos的位置处
+    void insert(int pos, ListItem *itemPtr);
+    // 删除pos位置处的元素
+    void erase(int pos);
+    void erase(ListItem *itemPtr);
+    // 返回指向pos位置处的元素的指针
+    ListItem *at(int pos);
+    // 返回给定元素在List中的序号
+    int find(ListItem *itemPtr);
+};
+```
+
+关于`List`的成员函数的实现同学们应该倒背如流，这里便不班门弄斧了，实现代码放置在`src/utils/list.cpp`中。
+
+PCB相当于线程的身份证，只要掌握了PCB就能掌握线程的全部信息，下面我们来创建线程。
+
+## 线程的创建
+
+首先，我们创建一个程序调度器`ProgramManager`，用于线程和进程的调度，如下所示，代码放置在`include/program.h`中。
+
+```cpp
+#ifndef PROGRAM_H
+#define PROGRAM_H
+
+#include "list.h"
+#include "thread.h"
+
+class ProgramManager
+{
+public:
+    List allPrograms;   // 所有状态的线程/进程的队列
+    List readyPrograms; // 处于ready(就绪态)的线程/进程的队列
+    PCB *running;       // 当前执行的线程
+public:
+    ProgramManager();
+    void initialize();
+    // 创建一个线程并放入就绪队列
+    // 成功，返回pid；失败，返回-1
+    int executeThread(ThreadFunction function, void *parameter, const char *name, int priority);
+    // 执行一次调度
+    void schedule();
+
+public:
+    //  分配一个未被占用的pid
+    int allocatePid();
+    // 按pid查找线程/进程
+    PCB *findProgramByPid(int pid);
+    // ListItem转换成PCB
+    PCB *ListItem2PCB(ListItem *item);
+};
+
+void program_exit();
+
+#endif
+```
+
+`allPrograms`是所有状态的线程和进程的队列，其中放置的是这些线程和进程的`tagInAllList`。`readyPrograms`是处在ready(就绪态)的线程/进程的队列，放置的是`tagInGeneralList`。
+
+然后我们在`include/os_modules`中定义一个全局的`ProgramManager`，如下所示。
+
+```cpp
+#ifndef OS_MODULES_H
+#define OS_MODULES_H
+
+#include "interrupt.h"
+#include "stdio.h"
+#include "memory.h"
+#include "program.h"
+
+// 中断管理器
+InterruptManager interruptManager;
+// 输出管理器
+STDIO stdio;
+// 内存管理器
+MemoryManager memoryManager;
+// 进程/线程管理器
+ProgramManager programManager;
+
+#endif
+```
+
+在使用`ProgramManager`的成员函数前，我们必须初始化`ProgramManager`，如下所示，代码放置在`src/program/program.cpp`中。
+
+```cpp
+ProgramManager::ProgramManager()
+{
+    initialize();
+}
+
+void ProgramManager::initialize()
+{
+    allPrograms.initialize();
+    readyPrograms.initialize();
+    runningThread = nullptr;
+}
+```
+
+现在我们来创建线程。
+
+前面提到，线程是一个函数的载体，因此线程执行的代码实际上是一个函数的代码。那么线程可以执行哪些函数的代码呢？这里我们规定线程只能执行返回值为`void`，参数为`void *`的函数，其中，`void *`是函数参数的指针。因此，当我们有多个参数时，我们需要将其放入到一个结构体中，线程执行的函数类型声明如下。
+
+```cpp
+typedef void(*ThreadFunction)(void *);
+```
+
+线程的创建如下所示。
+
+```cpp
+int ProgramManager::executeThread(ThreadFunction function, void *parameter, const char *name, int priority)
+{
+    // 关中断，防止创建线程的过程被打断
+    bool status = interruptManager.getInterruptStatus();
+    interruptManager.disableInterrupt();
+
+    // 分配一页作为PCB
+    PCB *thread = (PCB *)memoryManager.allocatePages(AddressPoolType::KERNEL, 1);
+    if (!thread)
+        return -1;
+
+    // 初始化分配的页
+    memset((char *)thread, 0, PAGE_SIZE);
+
+    for (int i = 0; i < MAX_PROGRAM_NAME && name[i]; ++i)
+    {
+        thread->name[i] = name[i];
+    }
+
+    thread->status = ThreadStatus::READY;
+    thread->priority = priority;
+    thread->ticks = priority * 10;
+    thread->ticksPassedBy = 0;
+
+    thread->pid = allocatePid();
+    if (thread->pid == -1)
+    {
+        memoryManager.releasePages(AddressPoolType::KERNEL, (int)thread, 1);
+        return -1;
+    }
+
+    // 线程栈
+    thread->stack = (int *)((int)thread + PAGE_SIZE);
+    thread->stack -= 7;
+    thread->stack[0] = 0;
+    thread->stack[1] = 0;
+    thread->stack[2] = 0;
+    thread->stack[3] = 0;
+    thread->stack[4] = (int)function;
+    thread->stack[5] = (int)program_exit;
+    thread->stack[6] = (int)parameter;
+
+    allPrograms.push_back(&(thread->tagInAllList));
+    readyPrograms.push_back(&(thread->tagInGeneralList));
+
+    // 恢复中断
+    interruptManager.setInterruptStatus(status);
+
+    return thread->pid;
+}
+```
+
+由于我们现在来到的多线程的环境，诸如内存分配的工作实际上都需要进行线程互斥处理，但我们并没有实现线程互斥的工具如锁、信号量等，因此这里我们只是简单地使用关中断和开中断来实现线程互斥。为什么开/关中断有效呢？在后面可以看到，我们是在时钟中断发生时来进行线程调度的，因此关中断后，时钟中断无法被响应，线程就无法被调度直到再次开中断。只要线程无法被调度，那么线程的工作也就无法被其他线程打断，因此就实现了线程互斥。
+
+和开/关中断等相关的的函数定义在`include/interrupt.h`中，如下所示。
+
+```cpp
+class InterruptManager
+{
+
+    ...
+
+    // 开中断
+    void enableInterrupt();
+    // 关中断
+    void disableInterrupt();
+    // 获取中断状态
+    // 返回true，中断开启；返回false，中断关闭
+    bool getInterruptStatus();
+    // 设置中断状态
+    // status=true，开中断；status=false，关中断
+    void setInterruptStatus(bool status);
+    
+    ...
+};
+```
+
+函数的实现比较简单，放置在`src/interrupt/interrupt.cpp`中，这里便不再赘述。
+
+关中断后，我们向内存管理器申请一页作为线程的PCB，若申请失败，则返回`-1`表示线程创建失败。否则，我们先将PCB清0，设置PCB的成员`name`、`status`、`priority`、`ticks`和`ticksPassedBy`。
+
+然后我们为线程申请一个pid，申请pid的函数如下。
+
+# TODO 用数组存取PID
+
+```cpp
+int ProgramManager::allocatePid()
+{
+    bool status = interruptManager.getInterruptStatus();
+    interruptManager.disableInterrupt();
+
+    // 0号线程
+    if (allPrograms.empty())
+        return 0;
+
+    int pid = -1;
+    PCB *program;
+
+    for (int i = 0; i < MAX_PROGRAM_AMOUNT; ++i)
+    {
+        program = findProgramByPid(i);
+        if (!program)
+        {
+            pid = i;
+            break;
+        }
+    }
+
+    interruptManager.setInterruptStatus(status);
+
+    return pid;
+}
+```
+
+`allocatePid`的基本实现思想是令pid从0到`MAX_PROGRAM_AMOUNT`（最大线程数量）开始遍历，检查pid是否和已有的线程的pid相同，若相同，则检查下一个pid，否则返回这个pid。检查pid是否相同是通过按pid查找线程的PCB的函数来完成的，这个函数如下所示。
+
+```cpp
+PCB *ProgramManager::findProgramByPid(int pid)
+{
+    bool status = interruptManager.getInterruptStatus();
+    interruptManager.disableInterrupt();
+
+    ListItem *item = allPrograms.head.next;
+    PCB *program, *ans;
+
+    ans = nullptr;
+    while (item)
+    {
+
+        program = (PCB *)(((dword)item) & 0xfffff000);
+
+        if (program->pid == pid)
+        {
+            ans = program;
+            break;
+        }
+        item = item->next;
+    }
+
+    interruptManager.setInterruptStatus(status);
+
+    return ans;
+}
+```
+
+`findProgramByPid`遍历包含了所有线程的线程队列`allPrograms`，然后比较每一个线程的pid是否和给定的pid相同，若相同，则返回线程的PCB指针，否则返回nullptr。线程队列存储的不是各个线程的PCB，而是通过PCB的两个`ListItem`成员将它们串接成一个`List`。为什么通过PCB的`ListItem`在线程队列中保存了PCB的信息呢？我们知道，`ListItem`有两个`ListItem *`成员，`previous`和`next`。这两个成员分别保存了线程队列中上一个线程的`ListItem`的地址和下一个线程的`ListItem`的地址。由于PCB是一个页，起始地址的低12位必然为0(页的大小是4KB)，而PCB的`ListItem`成员是位于这个页当中的，因此，`ListItem`成员的地址和`0xfffff000`相与便可得到PCB的地址。知道了PCB的地址就可以访问PCB的其他成员，这也就知道了PCB的所有信息。
+
+> 通过ListItem将PCB存储在线程队列中的做法比较巧妙，同学们注意理解和体会。
+
+如果我们找不到一个可用的pid，我们就要返回-1表明线程创建失败。但在返回前，我们需要释放PCB占用的页内存。如果找到可用的pid，我们就初始化线程的栈。线程的栈是从PCB的顶部开始向下增长的，因此，线程栈的初始地址是PCB的起始地址加上页的大小。然后，我们在栈中放入一些数值。
+
++ 4个为0的值是要放到ebp，ebx，edi，esi中的。
++ `thread->stack[4]`是线程执行的函数的起始地址。
++ `thread->stack[5]`是线程的返回地址。
++ `thread->stack[6]`是线程的参数。
+
+至于这4部份的作用我们在线程的调度中统一讲解。
+
+创建完线程的PCB后，我们将其放入到`allPrograms`和`readyPrograms`中，等待时钟中断来的时候可以被调度上处理器。
+
+最后我们将中断的状态恢复，此时我们便创建了一个线程。
+
+## 线程的调度
+
+我们首先要修改之前的处理时钟中断函数，如下所示。
+
+```cpp
+void c_time_interrupt_handler()
+{
+    PCB *cur = programManager.running;
+    //printf("pid %d ticks: %d\n", cur->pid, cur->ticks);
+    if (cur->ticks)
+    {
+        --cur->ticks;
+        ++cur->ticksPassedBy;
+    }
+    else
+    {
+        programManager.schedule();
+    }
+    
+}
+```
+
+这里，我们使用的是时间片轮转的线程调度算法。当时钟中断到来时，我们对当前线程的`ticks`减1，直到`ticks`等于0，然后执行线程调度。线程调度的代码如下。
+
+```cpp
+void ProgramManager::schedule()
+{
+    bool status = interruptManager.getInterruptStatus();
+    interruptManager.disableInterrupt();
+
+    if (readyPrograms.size() == 0)
+    {
+        interruptManager.setInterruptStatus(status);
+        return;
+    }
+
+    if (running->status == ThreadStatus::RUNNING)
+    {
+        running->status = ThreadStatus::READY;
+        running->ticks = running->priority * 10;
+        readyPrograms.push_back(&(running->tagInGeneralList));
+    }
+    else if (running->status == ThreadStatus::DEAD)
+    {
+        memoryManager.releasePages(AddressPoolType::KERNEL, (int)running, 1);
+    }
+
+    PCB *cur = running->status == DEAD ? 0 : running;
+    ListItem *item = readyPrograms.front();
+    PCB *next = ListItem2PCB(item);
+	 next->status = ThreadStatus::RUNNING;
+    running = next;
+    readyPrograms.pop_front();
+
+    //printf("schedule: %x, %x\n", cur, next);
+
+    asm_switch_thread(cur->stack, next->stack);
+
+    interruptManager.setInterruptStatus(status);
+}
+```
+
+首先，为了实现线程互斥，在进程线程调度前，我们需要关中断，退出时再恢复中断。接着，我们判断当前可调度的线程数量，如果`readyProgram`为空，那么说明当前系统中只有一个线程，因此无需进行调度。
+
+否则，我们判断当前线程的状态，如果是运行态(RUNNING)，则重新初始化其状态为就绪态(READY)和`ticks`，并放入就绪队列，其他情况不做处理。然后定义一个指向被换下处理器的线程的指针`cur`。接着我们去就绪队列的第一个线程作为下一个执行的线程，从就绪队列中删去这个线程，设置其状态为运行态和当前正在执行的线程。
+
+然后我们就开始将线程从`cur`切换到`next`，代码如下。线程的所有信息都在线程栈中，只要我们切换线程栈就能够实现线程的切换，线程栈的切换实际上就是将线程的栈指针放到esp中。
+
+```asm
+asm_switch_thread:
+    push ebp
+    push ebx
+    push edi
+    push esi
+
+    mov eax, [esp + 5 * 4]
+    mov [eax], esp ; 保存当前栈指针到PCB中，以便日后恢复
+
+    mov eax, [esp + 6 * 4]
+    mov esp, [eax] ; 此时栈已经从cur栈切换到next栈
+
+    pop esi
+    pop edi
+    pop ebx
+    pop ebp
+
+    sti
+    ret
+```
+
+首先我们保存寄存器`ebp`，`ebx`，`edi`，`esi`。为什么要保存这几个寄存器？这是由C语言的规则决定的，C语言要求被调函数主动为主调函数保存这4个寄存器的值。如果我们不遵循这个规则，那么当我们后面线程切换到C语言编写的代码时就会出错。然后，我们保存esp的值到线程的PCB中，用做下次恢复。注意，7-8行代码是首先将`cur->stack`的值放到`eax`中，然后向`[eax]`中写入`esp`的值，而`[eax]`等于`*(cur->stack)`，也就是将esp写入cur指向的线程的栈指针，此时，cur指向的PCB的栈结构如下。
+
+<img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/cur图示.png" alt="cur图示" style="zoom:25%;" />
+
+10-11行是将PCB的成员`stack`保存的线程栈指针的值写入到esp中，此时，`next`指向的线程有两种状态，一种是刚创建还未调度运行的，一种是之前被换下处理器现在又被调度。注意，由于esp发生了变化，此时的栈也就跟着发生变化。这两种状态对应的栈结构有些不一致，对于前者，其结构如下。
+
+<img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/next第一种情况图示.png" alt="next第一种情况图示" style="zoom:25%;" />
+
+接下来的`pop`语句会将4个0值放到esi，edi，ebx，ebp中，此时栈顶的数据是线程需要执行的函数的地址`function`。执行ret返回后，`function`会被加载进eip，从而是CPU跳转到这个函数中执行。此时，进入函数后，函数的栈顶是函数的返回地址，返回地址之上是函数的参数，符合函数的调用规则。而函数执行完成时，其执行ret指令后会跳转到返回地址`program_exit`，如下所示。
+
+```cpp
+void program_exit()
+{
+    PCB *thread = programManager.running;
+    thread->status = ThreadStatus::DEAD;
+
+    if (thread->pid)
+    {
+        programManager.schedule();
+    }
+    else
+    {
+        interruptManager.disableInterrupt();
+        printf("halt\n");
+        asm_halt();
+    }
+}
+```
+
+`program_exit`会将返回的线程的状态置为DEAD，然后调度下一个可执行的线程上处理器。注意，我们规定第一个线程是不可以返回的，这个线程的pid为0。
+
+第二种情况是之前被换下处理器现在又被调度，其栈结构如下所示。
+
+<img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/next第二种情况图示.png" alt="next第二种情况图示" style="zoom:25%;" />
+
+执行4个`pop`后，之前保存在线程栈中的内容会被恢复到这4个寄存器中，然后执行ret后会返回调用`asm_switch_thread`的函数，也就是`ProgramManager::schedule`，然后在`ProgramManager::schedule`中恢复中断状态，返回到时钟中断处理函数，最后从时钟中断中返回，恢复到线程被中断的地方继续执行。
+
+这样，通过`asm_switch_thread`中的`ret`指令和`esp`的变化，我们便实现了线程的调度。
+
+> `asm_switch_thread`的设计比较巧妙，需要同学们结合函数的调用规则，线程栈的设计等知识综合分析。
+
+至此，关于线程的内容我们已经实现完毕，接下来我们来编译运行。
+
+## Assignment 3 第一个线程
+
+> assignment 3：创建第一个线程，并输出“Hello World”，pid和线程的name。注意，第一个线程不可以返回。
+
+代码在`src/kernel/setup.cpp`中，如下所示。
+
+```cpp
+void first_thread(void *arg)
+{
+    // 第1个线程不可以返回
+    printf("pid %d name \"%s\": Hello World!\n", programManager.running->pid, programManager.running->name);
+    asm_halt();
+}
+
+extern "C" void setup_kernel()
+{
+    // 中断管理器
+    interruptManager.initialize();
+    interruptManager.enableTimeInterrupt();
+    interruptManager.setTimeInterrupt((void *)asm_time_interrupt_handler);
+
+    // 输出管理器
+    stdio.initialize();
+
+    // 内存管理器
+    memoryManager.openPageMechanism();
+    memoryManager.initialize(32 * 1024 * 1024);
+
+    // 进程/线程管理器
+    programManager.initialize();
+
+    // 创建第一个线程
+    int pid = programManager.executeThread(first_thread, nullptr, "first thread", 1);
+    if (pid == -1)
+    {
+        printf("can not execute thread\n");
+        asm_halt();
+    }
+
+    ListItem *item = programManager.readyPrograms.front();
+    PCB *firstThread = programManager.ListItem2PCB(item);
+    firstThread->status = RUNNING;
+    programManager.readyPrograms.pop_front();
+    programManager.running = firstThread;
+    asm_switch_thread(0, firstThread);
+
+    asm_halt();
+}
+```
+
+首先，我们新建一个线程。由于当前系统中没有线程，因此我们无法通过在时钟中断调度的方式将第一个线程换上处理器执行。因此我们的做法是找线程的PCB，然后手动执行类似`schedule`的过程，最后执行的`asm_switch_thread`会强制将第一个线程换上处理器执行。
+
+最后我们编译运行，输出如下结果。
+
+<img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/第一个线程.PNG" alt="第一个线程" style="zoom:38%;" />
+
+至此，本章的内容已经讲授完毕。
