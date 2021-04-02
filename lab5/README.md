@@ -648,7 +648,7 @@ struct PCB
 
 + `stack`。各个内核线程是共享内核空间的，但又相对独立，这种独立性体现在每一个线程都有自己的栈。那么线程的栈保存在哪里呢？线程的栈就保存在线程的PCB中，我们会为每一个PCB分配一个页。上面的`struct PCB`只是这个页的低地址部份，线程的栈指针从这个页的结束位置向下递减，如下所示。
 
-  <img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/TCB栈.png" alt="TCB栈" style="zoom:30%;" />
+  <img src="gallery/3.png" alt="TCB栈" style="zoom:30%;" />
 
   因此，我们不能向线程的栈中放入太多的东西，否则当栈指针向下扩展时，会与线程的PCB的信息发生覆盖，最终导致错误。`stack`的作用是在线程被换下处理器时保存esp的内容，然后当线程被换上处理器后，我们用`stack`去替换esp的内容，从而实现恢复线程运行的效果。
 
@@ -1103,13 +1103,13 @@ asm_switch_thread:
 
 第7-8行，我们保存esp的值到线程的`PCB::statck`中，用做下次恢复。注意到`PCB::stack`在`PCB`的偏移地址是0。因此，第7行代码是首先将`cur->stack`的地址放到`eax`中，第8行向`[eax]`中写入`esp`的值，也就是向`cur->stack`中写入esp。
 
-此时，cur指向的PCB的栈结构如下。
+此时，cur指向的PCB的栈结构如下，`PCB::stack`箭头指向的位置就是保存在`PCB::stack`中的值。
 
-<img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/cur图示.png" alt="cur图示" style="zoom:25%;" />
+<img src="gallery/4.png" alt="cur图示" style="zoom:25%;" />
 
 第10-11行，我们将`next->stack`的值写入到esp中，从而完成线程栈的切换。此时，`next`指向的线程有两种状态，一种是刚创建还未调度运行的，一种是之前被换下处理器现在又被调度。这两种状态对应的栈结构有些不一致，对于前者，其结构如下。
 
-<img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/next第一种情况图示.png" alt="next第一种情况图示" style="zoom:25%;" />
+<img src="gallery/5.png" alt="next第一种情况图示" style="zoom:25%;" />
 
 接下来的`pop`语句会将4个0值放到`esi`，`edi`，`ebx`，`ebp`中。此时，栈顶的数据是线程需要执行的函数的地址`function`。执行ret返回后，`function`会被加载进eip，从而使得CPU跳转到这个函数中执行。此时，进入函数后，函数的栈顶是函数的返回地址，返回地址之上是函数的参数，符合函数的调用规则。而函数执行完成时，其执行ret指令后会跳转到返回地址`program_exit`，如下所示。
 
@@ -1136,7 +1136,7 @@ void program_exit()
 
 第二种情况是之前被换下处理器的线程现在又被调度，其栈结构如下所示。
 
-<img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/next第二种情况图示.png" alt="next第二种情况图示" style="zoom:25%;" />
+<img src="gallery/6.png" alt="next第二种情况图示" style="zoom:25%;" />
 
 执行4个`pop`后，之前保存在线程栈中的内容会被恢复到这4个寄存器中，然后执行ret后会返回调用`asm_switch_thread`的函数，也就是`ProgramManager::schedule`，然后在`ProgramManager::schedule`中恢复中断状态，返回到时钟中断处理函数，最后从时钟中断中返回，恢复到线程被中断的地方继续执行。
 
