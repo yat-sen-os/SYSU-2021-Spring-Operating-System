@@ -1,3 +1,7 @@
+# 内核线程
+
+> 
+
 # 实验要求
 
 + gdb查看可变参数的例子。
@@ -576,8 +580,6 @@ make && make run
 
 > 此后，我们就可以愉快地使用printf来debug啦~
 
-# 内存管理的内容
-
 # 内核线程
 
 ## 程序、进程和线程
@@ -603,31 +605,43 @@ make && make run
 + 另一方面的优点是当进程中的某一线程阻塞后，由于线程是由内核空间实现的，操作系统认识线程，所以就只会阻塞这一个线程，此线程所在进程内的其他线程将不受影响，这又相当于提速了。
 + 用户进程需要通过系统调用陷入内核，这多少增加了一些现场保护的栈操作，这还是会消耗一些处理器时间，但和上面的大幅度提速相比，这显然是微不足道的。  
 
-## 线程的描述
+## 进程和线程的实现顺序
 
-线程的组成部分有操作系统为线程分配的栈，状态，优先级，运行时间，线程负责运行的函数，函数的参数等，这些组成部分被集中保存在一个结构中——PCB(Process Control Block)，如下所示，代码放在`include/thread.h`中。
+我们已经知道，计算机先有进程，然后再有线程，但为什么我们是先实现线程再实现进程呢？这是因为进程是有自己的地址空间的，而线程是共享父进程的地址空间的。也就是说，我们至少要学习完二级分页机制后才能明白我们是如何通过分页机制来让每一个进程拥有自己的地址空间的。线程则不一样，我们后面可以看到，线程实际上执行的是某一个函数，这个函数使用的是父进程的地址空间。注意到我们创建的线程是内核线程，并且我们现在运行的环境只有内核态。因此，线程的创建和使用并不会涉及到内存管理的内容。更进一步讲，从进程管理的角度来看，进程和线程都通过PCB这个结构体来描述，而我们的操作系统进行调度的单位是PCB。因此，即便我们没有实现进程，我们也能够通过实现内核线程的创建和管理来学习操作系统的进程管理的内容和思想。
 
-```cpp
-enum ThreadStatus
+接下来我们就来实现内核线程。
+
+> 在下面的内容中，内核线程简称为线程，并且代码保存在`src/4`下。
+
+# 线程的描述
+
+我们创建的线程的状态有5个，分别是创建态、运行态、就绪态、阻塞态和终止态。我们使用一个枚举类型`ProgramStatus`来描述线程的5个状态，代码放在`include/thread.h`中。
+
+```c++
+enum ProgramStatus
 {
-    CREATE,
+    CREATED,
     RUNNING,
     READY,
     BLOCKED,
     DEAD
 };
+```
 
+线程的组成部分线程各自的栈，状态，优先级，运行时间，线程负责运行的函数，函数的参数等，这些组成部分被集中保存在一个结构中——PCB(Process Control Block)，如下所示，代码放在`include/thread.h`中。
+
+```cpp
 struct PCB
 {
     int *stack;                      // 栈指针，用于调度时保存esp
     char name[MAX_PROGRAM_NAME + 1]; // 线程名
-    enum ThreadStatus status;        // 线程的状态
-    int priority;                   // 线程优先级
-    int pid;                       // 线程pid
-    int ticks;                     // 线程时间片总时间
-    int ticksPassedBy;             // 线程已执行时间
-    ListItem tagInGeneralList; // 线程队列标识
-    ListItem tagInAllList;     // 线程队列标识
+    enum ProgramStatus status;       // 线程的状态
+    int priority;                    // 线程优先级
+    int pid;                         // 线程pid
+    int ticks;                       // 线程时间片总时间
+    int ticksPassedBy;               // 线程已执行时间
+    ListItem tagInGeneralList;       // 线程队列标识
+    ListItem tagInAllList;           // 线程队列标识
 };
 ```
 
@@ -653,7 +667,7 @@ struct PCB
 
 + `tagInGeneralList`和`tagInAllList`是线程在线程队列中的标识，用于在线程队列中找到线程的PCB。
 
-其中，`ListItem`是链表`List`中的元素的表示，如下所示，代码放置在`list.h`中。
+其中，`ListItem`是链表`List`中的元素的表示，如下所示，代码放置在`include/list.h`中。
 
 ```cpp
 struct ListItem
@@ -708,72 +722,102 @@ public:
 
 关于`List`的成员函数的实现同学们应该倒背如流，这里便不班门弄斧了，实现代码放置在`src/utils/list.cpp`中。
 
-PCB相当于线程的身份证，只要掌握了PCB就能掌握线程的全部信息，下面我们来创建线程。
-
-## 线程的创建
-
-首先，我们创建一个程序调度器`ProgramManager`，用于线程和进程的调度，如下所示，代码放置在`include/program.h`中。
+接着，我们在`include/program.h`中声明一个程序管理类`ProgramManager`，`ProgramManager`将用于线程和进程的创建和管理。
 
 ```cpp
 #ifndef PROGRAM_H
 #define PROGRAM_H
 
-#include "list.h"
-#include "thread.h"
+class ProgramManager
+{
+    
+};
 
+#endif
+```
+
+准备工作已经就绪，我们接下来创建线程。
+
+# PCB的分配
+
+在创建线程之前，我们需要向内存申请一个PCB。我们将一个PCB的大小设置为4096个字节，也就是一个页的大小。本来我们PCB的分配是通过页内存管理来实现的，类似于`malloc`和`free`。但是，我们并没有实现基于二级分页机制的内存管理，或者说我们现在还没有引入内存分页的概念。为了解决PCB的内存分配问题，我们实际上是在内存中预留了若干个PCB的内存空间来存放和管理PCB，如下所示，代码放置在`include/program.cpp`中。
+
+```cpp
+// PCB的大小，4KB。
+const int PCB_SIZE = 4096;         
+// 存放PCB的数组，预留了MAX_PROGRAM_AMOUNT个PCB的大小空间。
+char PCB_SET[PCB_SIZE * MAX_PROGRAM_AMOUNT]; 
+// PCB的分配状态，true表示已经分配，false表示未分配。
+bool PCB_SET_STATUS[MAX_PROGRAM_AMOUNT];     
+```
+
+接着，我们在`ProgramManager`中声明两个管理PCB所在的内存空间函数。
+
+```cpp
+// 分配一个PCB
+PCB *allocatePCB();
+// 归还一个PCB
+void releasePCB(PCB *program);
+```
+
+我们首先看`allocatePCB`的实现，如下所示，代码放置在`src/kernel/program.cpp`中。
+
+```cpp
+PCB *ProgramManager::allocatePCB()
+{
+    for (int i = 0; i < MAX_PROGRAM_AMOUNT; ++i)
+    {
+        if (!PCB_SET_STATUS[i])
+        {
+            PCB_SET_STATUS[i] = true;
+            return (PCB *)((int)PCB_SET + PCB_SIZE * i);
+        }
+    }
+
+    return nullptr;
+}
+```
+
+`allocatePCB`会去检查`PCB_SET`中每一个PCB的状态，如果找到一个未被分配的PCB，则返回这个PCB的起始地址。注意到`PCB_SET`中的PCB是连续存放的，对于第$i$个PCB，`PCB_SET`的首地址加上$i\times PCB\_SIZE$就是第$i$个PCB的起始地址。PCB的状态保存在`PCB_SET_STATUS`中，并且`PCB_SET_STATUS`的每一项会在`ProgramManager`总被初始化为`false`，表示所有的PCB都未被分配。被分配的PCB用`true`来标识。
+
+如果`PCB_SET_STATUS`的所有元素都是`true`，表示所有的PCB都已经被分配，此时应该返回`nullptr`，表示PCB分配失败。
+
+既然有PCB的分配就有PCB的释放，如下所示。
+
+```cpp
+void ProgramManager::releasePCB(PCB *program)
+{
+    int index = ((int)program - (int)PCB_SET) / PCB_SIZE;
+    PCB_SET_STATUS[index] = false;
+}
+```
+
+`releasePCB`接受一个PCB指针`program`，然后计算出`program`指向的PCB在`PCB_SET`中的位置，然后将`PCB_SET_STATUS`中的对应位置设置`false`即可。
+
+# 线程的创建
+
+我们先在`ProgramManager`中放入两个`List`成员，`allPrograms`和`readyPrograms`，如下所示。
+
+```cpp
 class ProgramManager
 {
 public:
     List allPrograms;   // 所有状态的线程/进程的队列
     List readyPrograms; // 处于ready(就绪态)的线程/进程的队列
-    PCB *running;       // 当前执行的线程
+
 public:
     ProgramManager();
     void initialize();
-    // 创建一个线程并放入就绪队列
-    // 成功，返回pid；失败，返回-1
-    int executeThread(ThreadFunction function, void *parameter, const char *name, int priority);
-    // 执行一次调度
-    void schedule();
-
-public:
-    //  分配一个未被占用的pid
-    int allocatePid();
-    // 按pid查找线程/进程
-    PCB *findProgramByPid(int pid);
-    // ListItem转换成PCB
-    PCB *ListItem2PCB(ListItem *item);
+    
+    // 分配一个PCB
+    PCB *allocatePCB();
+    // 归还一个PCB
+    // program：待释放的PCB
+    void releasePCB(PCB *program);
 };
-
-void program_exit();
-
-#endif
 ```
 
-`allPrograms`是所有状态的线程和进程的队列，其中放置的是这些线程和进程的`tagInAllList`。`readyPrograms`是处在ready(就绪态)的线程/进程的队列，放置的是`tagInGeneralList`。
-
-然后我们在`include/os_modules`中定义一个全局的`ProgramManager`，如下所示。
-
-```cpp
-#ifndef OS_MODULES_H
-#define OS_MODULES_H
-
-#include "interrupt.h"
-#include "stdio.h"
-#include "memory.h"
-#include "program.h"
-
-// 中断管理器
-InterruptManager interruptManager;
-// 输出管理器
-STDIO stdio;
-// 内存管理器
-MemoryManager memoryManager;
-// 进程/线程管理器
-ProgramManager programManager;
-
-#endif
-```
+`allPrograms`是所有状态的线程和进程的队列，其中放置的是的`PCB::tagInAllList`。`readyPrograms`是处在ready(就绪态)的线程/进程的队列，放置的是`PCB::tagInGeneralList`。
 
 在使用`ProgramManager`的成员函数前，我们必须初始化`ProgramManager`，如下所示，代码放置在`src/program/program.cpp`中。
 
@@ -787,19 +831,55 @@ void ProgramManager::initialize()
 {
     allPrograms.initialize();
     readyPrograms.initialize();
-    runningThread = nullptr;
+    running = nullptr;
+
+    for (int i = 0; i < MAX_PROGRAM_AMOUNT; ++i)
+    {
+        PCB_SET_STATUS[i] = false;
+    }
 }
 ```
 
 现在我们来创建线程。
 
-前面提到，线程是一个函数的载体，因此线程执行的代码实际上是一个函数的代码。那么线程可以执行哪些函数的代码呢？这里我们规定线程只能执行返回值为`void`，参数为`void *`的函数，其中，`void *`是函数参数的指针。因此，当我们有多个参数时，我们需要将其放入到一个结构体中，线程执行的函数类型声明如下。
+线程实际上执行的是某一个函数的代码。但是，并不是所有的函数都可以放入到线程中执行的。那么线程可以执行哪些函数的代码呢？这里我们规定线程只能执行返回值为`void`，参数为`void *`的函数，其中，`void *`指向了函数的参数。我们在`include/Program.h`中将上面提到的这个函数定义为`ThreadFunction`。
 
 ```cpp
 typedef void(*ThreadFunction)(void *);
 ```
 
-线程的创建如下所示。
+我们在`ProgramManager`中声明一个用于创建线程的函数`executeThread`。
+
+```cpp
+class ProgramManager
+{
+public:
+    List allPrograms;   // 所有状态的线程/进程的队列
+    List readyPrograms; // 处于ready(就绪态)的线程/进程的队列
+    PCB *running;       // 当前执行的线程
+public:
+    ProgramManager();
+    void initialize();
+
+    // 创建一个线程并放入就绪队列
+
+    // function：线程执行的函数
+    // parameter：指向函数的参数的指针
+    // name：线程的名称
+    // priority：线程的优先级
+
+    // 成功，返回pid；失败，返回-1
+    int executeThread(ThreadFunction function, void *parameter, const char *name, int priority);
+
+    // 分配一个PCB
+    PCB *allocatePCB();
+    // 归还一个PCB
+    // program：待释放的PCB
+    void releasePCB(PCB *program);
+};
+```
+
+我们在`src/kernel/program.cpp`中实现`executeThread`，如下所示。
 
 ```cpp
 int ProgramManager::executeThread(ThreadFunction function, void *parameter, const char *name, int priority)
@@ -809,32 +889,27 @@ int ProgramManager::executeThread(ThreadFunction function, void *parameter, cons
     interruptManager.disableInterrupt();
 
     // 分配一页作为PCB
-    PCB *thread = (PCB *)memoryManager.allocatePages(AddressPoolType::KERNEL, 1);
+    PCB *thread = allocatePCB();
+
     if (!thread)
         return -1;
 
     // 初始化分配的页
-    memset((char *)thread, 0, PAGE_SIZE);
+    memset(thread, 0, PCB_SIZE);
 
     for (int i = 0; i < MAX_PROGRAM_NAME && name[i]; ++i)
     {
         thread->name[i] = name[i];
     }
 
-    thread->status = ThreadStatus::READY;
+    thread->status = ProgramStatus::READY;
     thread->priority = priority;
     thread->ticks = priority * 10;
     thread->ticksPassedBy = 0;
-
-    thread->pid = allocatePid();
-    if (thread->pid == -1)
-    {
-        memoryManager.releasePages(AddressPoolType::KERNEL, (int)thread, 1);
-        return -1;
-    }
+    thread->pid = ((int)thread - (int)PCB_SET) / PCB_SIZE;
 
     // 线程栈
-    thread->stack = (int *)((int)thread + PAGE_SIZE);
+    thread->stack = (int *)((int)thread + PCB_SIZE);
     thread->stack -= 7;
     thread->stack[0] = 0;
     thread->stack[1] = 0;
@@ -854,9 +929,13 @@ int ProgramManager::executeThread(ThreadFunction function, void *parameter, cons
 }
 ```
 
-由于我们现在来到的多线程的环境，诸如内存分配的工作实际上都需要进行线程互斥处理，但我们并没有实现线程互斥的工具如锁、信号量等，因此这里我们只是简单地使用关中断和开中断来实现线程互斥。为什么开/关中断有效呢？在后面可以看到，我们是在时钟中断发生时来进行线程调度的，因此关中断后，时钟中断无法被响应，线程就无法被调度直到再次开中断。只要线程无法被调度，那么线程的工作也就无法被其他线程打断，因此就实现了线程互斥。
+我们现在逐步地分析线程创建的逻辑。
 
-和开/关中断等相关的的函数定义在`include/interrupt.h`中，如下所示。
+第3-5行，由于我们现在来到的多线程的环境，诸如PCB分配的工作实际上都需要进行线程互斥处理，但我们并没有实现线程互斥的工具如锁、信号量等，因此这里我们只是简单地使用关中断和开中断来实现线程互斥。为什么开/关中断有效呢？在后面可以看到，我们是在时钟中断发生时来进行线程调度的，因此关中断后，时钟中断无法被响应，线程就无法被调度，直到再次开中断。只要线程无法被调度，那么线程的工作也就无法被其他线程打断，因此就实现了线程互斥。
+
+关中断后，我们需要在函数返回前，也就是第44行恢复中断。
+
+开/关中断等相关的的函数定义在`include/interrupt.h`中，如下所示。
 
 ```cpp
 class InterruptManager
@@ -879,92 +958,28 @@ class InterruptManager
 };
 ```
 
-函数的实现比较简单，放置在`src/interrupt/interrupt.cpp`中，这里便不再赘述。
+函数的实现比较简单，放置在`src/interrupt/interrupt.cpp`中，这里便不再赘述，现在我们回到`executeThread`。
 
-关中断后，我们向内存管理器申请一页作为线程的PCB，若申请失败，则返回`-1`表示线程创建失败。否则，我们先将PCB清0，设置PCB的成员`name`、`status`、`priority`、`ticks`和`ticksPassedBy`。
+第8行，关中断后，我们向`PCB_SET`申请一个线程的PCB，然后我们在第14行使用`memeset`将PCB清0。`memeset`的声明和定义分别在`include/stdlib.h`和`src/utils/stdlib.cpp`。
 
-然后我们为线程申请一个pid，申请pid的函数如下。
+第16-25行，我们设置PCB的成员`name`、`status`、`priority`、`ticks`、`ticksPassedBy`和`pid`。这里，线程初始的`ticks`我们简单地设置为`10`倍的`priority`。`pid`则简单地使用PCB在`PCB_SET`的位置来代替。
 
-# TODO 用数组存取PID
+第28行，我们初始化线程的栈。我们将栈放置在PCB中，而线程的栈是从PCB的顶部开始向下增长的，所以不会与位于PCB低地址的`name`和`pid`等变量冲突。线程栈的初始地址是PCB的起始地址加上`PCB_SIZE`。
 
-```cpp
-int ProgramManager::allocatePid()
-{
-    bool status = interruptManager.getInterruptStatus();
-    interruptManager.disableInterrupt();
-
-    // 0号线程
-    if (allPrograms.empty())
-        return 0;
-
-    int pid = -1;
-    PCB *program;
-
-    for (int i = 0; i < MAX_PROGRAM_AMOUNT; ++i)
-    {
-        program = findProgramByPid(i);
-        if (!program)
-        {
-            pid = i;
-            break;
-        }
-    }
-
-    interruptManager.setInterruptStatus(status);
-
-    return pid;
-}
-```
-
-`allocatePid`的基本实现思想是令pid从0到`MAX_PROGRAM_AMOUNT`（最大线程数量）开始遍历，检查pid是否和已有的线程的pid相同，若相同，则检查下一个pid，否则返回这个pid。检查pid是否相同是通过按pid查找线程的PCB的函数来完成的，这个函数如下所示。
-
-```cpp
-PCB *ProgramManager::findProgramByPid(int pid)
-{
-    bool status = interruptManager.getInterruptStatus();
-    interruptManager.disableInterrupt();
-
-    ListItem *item = allPrograms.head.next;
-    PCB *program, *ans;
-
-    ans = nullptr;
-    while (item)
-    {
-
-        program = (PCB *)(((dword)item) & 0xfffff000);
-
-        if (program->pid == pid)
-        {
-            ans = program;
-            break;
-        }
-        item = item->next;
-    }
-
-    interruptManager.setInterruptStatus(status);
-
-    return ans;
-}
-```
-
-`findProgramByPid`遍历包含了所有线程的线程队列`allPrograms`，然后比较每一个线程的pid是否和给定的pid相同，若相同，则返回线程的PCB指针，否则返回nullptr。线程队列存储的不是各个线程的PCB，而是通过PCB的两个`ListItem`成员将它们串接成一个`List`。为什么通过PCB的`ListItem`在线程队列中保存了PCB的信息呢？我们知道，`ListItem`有两个`ListItem *`成员，`previous`和`next`。这两个成员分别保存了线程队列中上一个线程的`ListItem`的地址和下一个线程的`ListItem`的地址。由于PCB是一个页，起始地址的低12位必然为0(页的大小是4KB)，而PCB的`ListItem`成员是位于这个页当中的，因此，`ListItem`成员的地址和`0xfffff000`相与便可得到PCB的地址。知道了PCB的地址就可以访问PCB的其他成员，这也就知道了PCB的所有信息。
-
-> 通过ListItem将PCB存储在线程队列中的做法比较巧妙，同学们注意理解和体会。
-
-如果我们找不到一个可用的pid，我们就要返回-1表明线程创建失败。但在返回前，我们需要释放PCB占用的页内存。如果找到可用的pid，我们就初始化线程的栈。线程的栈是从PCB的顶部开始向下增长的，因此，线程栈的初始地址是PCB的起始地址加上页的大小。然后，我们在栈中放入一些数值。
+第29-36行，我们在栈中放入7个整数值。
 
 + 4个为0的值是要放到ebp，ebx，edi，esi中的。
 + `thread->stack[4]`是线程执行的函数的起始地址。
-+ `thread->stack[5]`是线程的返回地址。
-+ `thread->stack[6]`是线程的参数。
++ `thread->stack[5]`是线程的返回地址，所有的线程执行完毕后都会返回到这个地址。
++ `thread->stack[6]`是线程的参数的地址。
 
 至于这4部份的作用我们在线程的调度中统一讲解。
 
-创建完线程的PCB后，我们将其放入到`allPrograms`和`readyPrograms`中，等待时钟中断来的时候可以被调度上处理器。
+创建完线程的PCB后，我们将其放入到`allPrograms`和`readyPrograms`中，等待时钟中断来的时候，这个新创建的线程就可以被调度上处理器。
 
 最后我们将中断的状态恢复，此时我们便创建了一个线程。
 
-## 线程的调度
+# 线程的调度
 
 我们首先要修改之前的处理时钟中断函数，如下所示。
 

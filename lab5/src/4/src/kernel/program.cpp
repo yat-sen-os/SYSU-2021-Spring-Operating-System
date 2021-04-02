@@ -6,9 +6,9 @@
 #include "thread.h"
 #include "os_modules.h"
 
-const int PCB_SIZE = 4096;
-char PCB_SET[PCB_SIZE * MAX_PROGRAM_AMOUNT];
-bool PCB_SET_STATUS[MAX_PROGRAM_AMOUNT];
+const int PCB_SIZE = 4096;                   // PCB的大小，4KB。
+char PCB_SET[PCB_SIZE * MAX_PROGRAM_AMOUNT]; // 存放PCB的数组，预留了MAX_PROGRAM_AMOUNT个PCB的大小空间。
+bool PCB_SET_STATUS[MAX_PROGRAM_AMOUNT];     // PCB的分配状态，true表示已经分配，false表示未分配。
 
 ProgramManager::ProgramManager()
 {
@@ -21,7 +21,8 @@ void ProgramManager::initialize()
     readyPrograms.initialize();
     running = nullptr;
 
-    for(int i = 0; i < MAX_PROGRAM_AMOUNT; ++i ) {
+    for (int i = 0; i < MAX_PROGRAM_AMOUNT; ++i)
+    {
         PCB_SET_STATUS[i] = false;
     }
 }
@@ -52,10 +53,8 @@ int ProgramManager::executeThread(ThreadFunction function, void *parameter, cons
     thread->ticksPassedBy = 0;
     thread->pid = ((int)thread - (int)PCB_SET) / PCB_SIZE;
 
-    //printf("%d %x\n", thread->pid, thread);
-
     // 线程栈
-    thread->stack = (int *)((int)thread +PCB_SIZE);
+    thread->stack = (int *)((int)thread + PCB_SIZE);
     thread->stack -= 7;
     thread->stack[0] = 0;
     thread->stack[1] = 0;
@@ -112,7 +111,9 @@ void ProgramManager::schedule()
         running->status = ProgramStatus::READY;
         running->ticks = running->priority * 10;
         readyPrograms.push_back(&(running->tagInGeneralList));
-    } else if(running->status == ProgramStatus::DEAD) {
+    }
+    else if (running->status == ProgramStatus::DEAD)
+    {
         releasePCB(running);
     }
 
@@ -147,8 +148,10 @@ void program_exit()
 
 PCB *ProgramManager::allocatePCB()
 {
-    for(int i = 0; i < MAX_PROGRAM_AMOUNT; ++i ) {
-        if(!PCB_SET_STATUS[i]) {
+    for (int i = 0; i < MAX_PROGRAM_AMOUNT; ++i)
+    {
+        if (!PCB_SET_STATUS[i])
+        {
             PCB_SET_STATUS[i] = true;
             return (PCB *)((int)PCB_SET + PCB_SIZE * i);
         }
