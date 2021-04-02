@@ -1,12 +1,13 @@
 # 内核线程
 
-> 
+> 古今之成大事者，不惟有超世之才，亦必有坚韧不拔之志。
 
 # 实验要求
 
 + gdb查看可变参数的例子。
 + printf %d %x
 + 线程调度算法。
++ asm_switch_thread调度的跟踪
 
 # 参考资料
 
@@ -96,9 +97,7 @@ void print_any_number_of_integers(int n, ...)
 
 第4行，我们首先定义一个指向可变参数列表的指针`parameter`，`parameter`会帮助我们引用可变参数列表的参数。但是，此时`parameter`并未指向`function`的可变参数列表，我们需要使用`va_start`来初始化`parameter`，使其指向可变参数列表的第一个参数。为什么我们一定要指定一个固定参数呢？回想起第3章反复强调的C/C++函数调用规则——在函数调用前，函数的参数会被从右到左依次入栈。
 
-# TODO 函数调用的图片
-
-从上面的图片可以看到，无论参数数量有多少，这些参数都被统一地放到了栈上，只不过使用可变参数的函数并不知道这些栈上的参数具体含义。因此我们才需要使用`va_arg`来指定参数的类型后才能引用函数的可变参数。也就是说，只有到了函数的实现这一步才会知道可变参数放置的是什么内容。注意到栈的增长方式是从高地址向低地址增长的，因此函数的参数从左到右，地址依次增大。固定参数列表的最后一个参数的作用就是告诉我们可变参数列表的起始地址，如下所示。
+无论参数数量有多少，这些参数都被统一地按函数调用给出的顺序放到了栈上，只不过使用可变参数的函数并不知道这些栈上的参数具体含义。因此我们才需要使用`va_arg`来指定参数的类型后才能引用函数的可变参数。也就是说，只有到了函数的实现这一步才会知道可变参数放置的是什么内容。注意到栈的增长方式是从高地址向低地址增长的，因此函数的参数从左到右，地址依次增大。固定参数列表的最后一个参数的作用就是告诉我们可变参数列表的起始地址，如下所示。
 $$
 可变参数列表的起始地址=固定参数列表的最后一个参数的地址+这个参数的大小
 $$
@@ -574,7 +573,7 @@ OBJ += $(ASM_OBJ)
 make && make run
 ```
 
-<img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第4章 二级分页机制/gallery/printf的实现.PNG" alt="printf的实现" style="zoom:38%;" />
+<img src="gallery/1.png" alt="printf的实现" style="zoom:38%;" />
 
 至此，我们实现了一个简单的`printf`函数。
 
@@ -862,12 +861,10 @@ public:
     void initialize();
 
     // 创建一个线程并放入就绪队列
-
     // function：线程执行的函数
     // parameter：指向函数的参数的指针
     // name：线程的名称
     // priority：线程的优先级
-
     // 成功，返回pid；失败，返回-1
     int executeThread(ThreadFunction function, void *parameter, const char *name, int priority);
 
@@ -981,13 +978,27 @@ class InterruptManager
 
 # 线程的调度
 
-我们首先要修改之前的处理时钟中断函数，如下所示。
+我们先在`ProgramManager`中放入成员`running`，表示当前在处理机上执行的线程的PCB。
 
 ```cpp
-void c_time_interrupt_handler()
+class ProgramManager
+{
+public:
+    List allPrograms;   // 所有状态的线程/进程的队列
+    List readyPrograms; // 处于ready(就绪态)的线程/进程的队列
+    PCB *running;       // 当前执行的线程
+
+    ...
+};
+```
+
+修改之前的处理时钟中断函数，如下所示，代码保存在`src/kernel/interrupt.cpp`中。
+
+```cpp
+extern "C" void c_time_interrupt_handler()
 {
     PCB *cur = programManager.running;
-    //printf("pid %d ticks: %d\n", cur->pid, cur->ticks);
+
     if (cur->ticks)
     {
         --cur->ticks;
@@ -997,11 +1008,18 @@ void c_time_interrupt_handler()
     {
         programManager.schedule();
     }
-    
 }
 ```
 
-这里，我们使用的是时间片轮转的线程调度算法。当时钟中断到来时，我们对当前线程的`ticks`减1，直到`ticks`等于0，然后执行线程调度。线程调度的代码如下。
+我们实现的线程调度算法是最简单的时间片轮转算法（Round Robin, RR）。
+
+> round robin 来源于法语ruban rond（round ribbon），意思是环形丝带。
+>
+> 在17、18世纪时法国农民希望以请愿的方式抗议国王时，通常君主的反应是将请愿书中最前面的两至三人逮捕并处决，所以很自然地没有人希望自己的名字被列在前面。为了对付这种专制的报复，人们在请愿书底部把名字签成一个圈（如同一条环状的带子），这样就找不出带头大哥，于是只能对所有参与者进行同样的惩罚。
+>
+> 1731年，英国皇家海军最初使用了这个名词，以循环顺序签署请愿书，这样就没法找到带头大哥了。
+
+当时钟中断到来时，我们对当前线程的`ticks`减1，直到`ticks`等于0，然后执行线程调度。线程调度的是通过函数`ProgramManager::schedule`来完成的，如下所示。
 
 ```cpp
 void ProgramManager::schedule()
@@ -1015,37 +1033,49 @@ void ProgramManager::schedule()
         return;
     }
 
-    if (running->status == ThreadStatus::RUNNING)
+    if (running->status == ProgramStatus::RUNNING)
     {
-        running->status = ThreadStatus::READY;
+        running->status = ProgramStatus::READY;
         running->ticks = running->priority * 10;
         readyPrograms.push_back(&(running->tagInGeneralList));
     }
-    else if (running->status == ThreadStatus::DEAD)
+    else if (running->status == ProgramStatus::DEAD)
     {
-        memoryManager.releasePages(AddressPoolType::KERNEL, (int)running, 1);
+        releasePCB(running);
     }
 
-    PCB *cur = running->status == DEAD ? 0 : running;
     ListItem *item = readyPrograms.front();
-    PCB *next = ListItem2PCB(item);
-	 next->status = ThreadStatus::RUNNING;
+    PCB *next = ListItem2PCB(item, tagInGeneralList);
+    PCB *cur = running;
+    next->status = ProgramStatus::RUNNING;
     running = next;
     readyPrograms.pop_front();
 
-    //printf("schedule: %x, %x\n", cur, next);
-
-    asm_switch_thread(cur->stack, next->stack);
+    asm_switch_thread(cur, next);
 
     interruptManager.setInterruptStatus(status);
 }
 ```
 
-首先，为了实现线程互斥，在进程线程调度前，我们需要关中断，退出时再恢复中断。接着，我们判断当前可调度的线程数量，如果`readyProgram`为空，那么说明当前系统中只有一个线程，因此无需进行调度。
+我们接下来分析`ProgramManager::schedule`的逻辑。
 
-否则，我们判断当前线程的状态，如果是运行态(RUNNING)，则重新初始化其状态为就绪态(READY)和`ticks`，并放入就绪队列，其他情况不做处理。然后定义一个指向被换下处理器的线程的指针`cur`。接着我们去就绪队列的第一个线程作为下一个执行的线程，从就绪队列中删去这个线程，设置其状态为运行态和当前正在执行的线程。
+首先，和`ProgramManager::executeThread`一样，为了实现线程互斥，在进程线程调度前，我们需要关中断，退出时再恢复中断。
 
-然后我们就开始将线程从`cur`切换到`next`，代码如下。线程的所有信息都在线程栈中，只要我们切换线程栈就能够实现线程的切换，线程栈的切换实际上就是将线程的栈指针放到esp中。
+第6-9行，我们判断当前可调度的线程数量，如果`readyProgram`为空，那么说明当前系统中只有一个线程，因此无需进行调度，直接返回即可。
+
+第12-21行，我们判断当前线程的状态，如果是运行态(RUNNING)，则重新初始化其状态为就绪态(READY)和`ticks`，并放入就绪队列；如果是终止态(DEAD)，则回收线程的PCB。
+
+第23行，我们去就绪队列的第一个线程作为下一个执行的线程。就绪队列的第一个元素是`ListItem *`类型的，我们需要将其转换为`PCB`。注意到放入就绪队列`readyPrograms`的是每一个PCB的`&tagInGeneralList`，而`tagInGeneralList`在PCB中的偏移地址是固定的。也就是说，我们将`item`的值减去`tagInGeneralList`在PCB中的偏移地址就能够得到PCB的起始地址。我们将上述过程写成一个宏。
+
+```cpp
+#define ListItem2PCB(ADDRESS, LIST_ITEM) ((PCB *)((int)(ADDRESS) - (int)&((PCB *)0)->LIST_ITEM))
+```
+
+其中，`(int)&((PCB *)0)->LIST_ITEM)`求出的是`LIST_ITEM`这个属性在PCB中的偏移地址。
+
+第27-28行，我们从就绪队列中删去第一个线程，设置其状态为运行态和当前正在执行的线程。
+
+最后，我们就开始将线程从`cur`切换到`next`，如下所示，代码放置在`src/utils/asm_utils.asm`中。线程的所有信息都在线程栈中，只要我们切换线程栈就能够实现线程的切换，线程栈的切换实际上就是将线程的栈指针放到esp中。
 
 ```asm
 asm_switch_thread:
@@ -1069,15 +1099,19 @@ asm_switch_thread:
     ret
 ```
 
-首先我们保存寄存器`ebp`，`ebx`，`edi`，`esi`。为什么要保存这几个寄存器？这是由C语言的规则决定的，C语言要求被调函数主动为主调函数保存这4个寄存器的值。如果我们不遵循这个规则，那么当我们后面线程切换到C语言编写的代码时就会出错。然后，我们保存esp的值到线程的PCB中，用做下次恢复。注意，7-8行代码是首先将`cur->stack`的值放到`eax`中，然后向`[eax]`中写入`esp`的值，而`[eax]`等于`*(cur->stack)`，也就是将esp写入cur指向的线程的栈指针，此时，cur指向的PCB的栈结构如下。
+第2-5行，我们保存寄存器`ebp`，`ebx`，`edi`，`esi`。为什么要保存这几个寄存器？这是由C语言的规则决定的，C语言要求被调函数主动为主调函数保存这4个寄存器的值。如果我们不遵循这个规则，那么当我们后面线程切换到C语言编写的代码时就会出错。
+
+第7-8行，我们保存esp的值到线程的`PCB::statck`中，用做下次恢复。注意到`PCB::stack`在`PCB`的偏移地址是0。因此，第7行代码是首先将`cur->stack`的地址放到`eax`中，第8行向`[eax]`中写入`esp`的值，也就是向`cur->stack`中写入esp。
+
+此时，cur指向的PCB的栈结构如下。
 
 <img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/cur图示.png" alt="cur图示" style="zoom:25%;" />
 
-10-11行是将PCB的成员`stack`保存的线程栈指针的值写入到esp中，此时，`next`指向的线程有两种状态，一种是刚创建还未调度运行的，一种是之前被换下处理器现在又被调度。注意，由于esp发生了变化，此时的栈也就跟着发生变化。这两种状态对应的栈结构有些不一致，对于前者，其结构如下。
+第10-11行，我们将`next->stack`的值写入到esp中，从而完成线程栈的切换。此时，`next`指向的线程有两种状态，一种是刚创建还未调度运行的，一种是之前被换下处理器现在又被调度。这两种状态对应的栈结构有些不一致，对于前者，其结构如下。
 
 <img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/next第一种情况图示.png" alt="next第一种情况图示" style="zoom:25%;" />
 
-接下来的`pop`语句会将4个0值放到esi，edi，ebx，ebp中，此时栈顶的数据是线程需要执行的函数的地址`function`。执行ret返回后，`function`会被加载进eip，从而是CPU跳转到这个函数中执行。此时，进入函数后，函数的栈顶是函数的返回地址，返回地址之上是函数的参数，符合函数的调用规则。而函数执行完成时，其执行ret指令后会跳转到返回地址`program_exit`，如下所示。
+接下来的`pop`语句会将4个0值放到`esi`，`edi`，`ebx`，`ebp`中。此时，栈顶的数据是线程需要执行的函数的地址`function`。执行ret返回后，`function`会被加载进eip，从而使得CPU跳转到这个函数中执行。此时，进入函数后，函数的栈顶是函数的返回地址，返回地址之上是函数的参数，符合函数的调用规则。而函数执行完成时，其执行ret指令后会跳转到返回地址`program_exit`，如下所示。
 
 ```cpp
 void program_exit()
@@ -1100,7 +1134,7 @@ void program_exit()
 
 `program_exit`会将返回的线程的状态置为DEAD，然后调度下一个可执行的线程上处理器。注意，我们规定第一个线程是不可以返回的，这个线程的pid为0。
 
-第二种情况是之前被换下处理器现在又被调度，其栈结构如下所示。
+第二种情况是之前被换下处理器的线程现在又被调度，其栈结构如下所示。
 
 <img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/next第二种情况图示.png" alt="next第二种情况图示" style="zoom:25%;" />
 
@@ -1112,13 +1146,24 @@ void program_exit()
 
 至此，关于线程的内容我们已经实现完毕，接下来我们来编译运行。
 
-## Assignment 3 第一个线程
+# Example 1 第一个线程
 
-> assignment 3：创建第一个线程，并输出“Hello World”，pid和线程的name。注意，第一个线程不可以返回。
-
-代码在`src/kernel/setup.cpp`中，如下所示。
+我们创建第一个线程，并输出“Hello World”，pid和线程的name。注意，第一个线程不可以返回。代码在`src/kernel/setup.cpp`中，如下所示。
 
 ```cpp
+#include "asm_utils.h"
+#include "interrupt.h"
+#include "stdio.h"
+#include "program.h"
+#include "thread.h"
+
+// 屏幕IO处理器
+STDIO stdio;
+// 中断管理器
+InterruptManager interruptManager;
+// 程序管理器
+ProgramManager programManager;
+
 void first_thread(void *arg)
 {
     // 第1个线程不可以返回
@@ -1128,6 +1173,7 @@ void first_thread(void *arg)
 
 extern "C" void setup_kernel()
 {
+
     // 中断管理器
     interruptManager.initialize();
     interruptManager.enableTimeInterrupt();
@@ -1135,10 +1181,6 @@ extern "C" void setup_kernel()
 
     // 输出管理器
     stdio.initialize();
-
-    // 内存管理器
-    memoryManager.openPageMechanism();
-    memoryManager.initialize(32 * 1024 * 1024);
 
     // 进程/线程管理器
     programManager.initialize();
@@ -1152,7 +1194,7 @@ extern "C" void setup_kernel()
     }
 
     ListItem *item = programManager.readyPrograms.front();
-    PCB *firstThread = programManager.ListItem2PCB(item);
+    PCB *firstThread = ListItem2PCB(item, tagInGeneralList);
     firstThread->status = RUNNING;
     programManager.readyPrograms.pop_front();
     programManager.running = firstThread;
@@ -1162,10 +1204,14 @@ extern "C" void setup_kernel()
 }
 ```
 
-首先，我们新建一个线程。由于当前系统中没有线程，因此我们无法通过在时钟中断调度的方式将第一个线程换上处理器执行。因此我们的做法是找线程的PCB，然后手动执行类似`schedule`的过程，最后执行的`asm_switch_thread`会强制将第一个线程换上处理器执行。
+第12行，我们定义全局变量`ProgramManager`。
 
-最后我们编译运行，输出如下结果。
+第36-48行，我们创建第一个线程。由于当前系统中没有线程，因此我们无法通过在时钟中断调度的方式将第一个线程换上处理器执行。因此我们的做法是找出第一个线程的PCB，然后手动执行类似`schedule`的过程，最后执行的`asm_switch_thread`会强制将第一个线程换上处理器执行。
 
-<img src="/home/nelson/NeXon/sysu-2021-spring-operating-system/lab5/第5章 内核线程/gallery/第一个线程.PNG" alt="第一个线程" style="zoom:38%;" />
+我们编译运行，输出如下结果。
+
+<img src="gallery/2.png" alt="第一个线程" style="zoom:38%;" />
 
 至此，本章的内容已经讲授完毕。
+
+# 课后思考题（不需要完成）

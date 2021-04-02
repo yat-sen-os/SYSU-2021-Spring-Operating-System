@@ -88,7 +88,7 @@ void InterruptManager::setTimeInterrupt(void *handler)
 extern "C" void c_time_interrupt_handler()
 {
     PCB *cur = programManager.running;
-    //printf("pid %d ticks: %d\n", cur->pid, cur->ticks);
+
     if (cur->ticks)
     {
         --cur->ticks;

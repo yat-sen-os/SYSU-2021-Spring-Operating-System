@@ -31,6 +31,9 @@ public:
     // 归还一个PCB
     // program：待释放的PCB
     void releasePCB(PCB *program);
+
+    // 执行线程调度
+    void schedule();
 };
 
 void program_exit();

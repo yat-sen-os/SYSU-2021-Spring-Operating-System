@@ -73,28 +73,6 @@ int ProgramManager::executeThread(ThreadFunction function, void *parameter, cons
     return thread->pid;
 }
 
-PCB *ProgramManager::findProgramByPid(int pid)
-{
-    ListItem *item = allPrograms.head.next;
-    PCB *program, *ans;
-
-    ans = nullptr;
-    while (item)
-    {
-
-        program = (PCB *)(((dword)item) & 0xfffff000);
-
-        if (program->pid == pid)
-        {
-            ans = program;
-            break;
-        }
-        item = item->next;
-    }
-
-    return ans;
-}
-
 void ProgramManager::schedule()
 {
     bool status = interruptManager.getInterruptStatus();
