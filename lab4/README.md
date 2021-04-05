@@ -4,7 +4,29 @@
 
 # 实验要求
 
+> + DDL：2021年4月15号 23:59
+> + 提交的内容：将**4个assignment的代码**和**实验报告**放到**压缩包**中，命名为“**lab4-姓名-学号**”，并交到课程网站上[http://course.dds-sysu.tech/course/3/homework]
+> + **材料的Example的代码放置在`src`目录下**。
 
+1. 实验不限语言， C/C++/Rust都可以。
+2. 实验不限平台， Windows、Linux和MacOS等都可以。
+3. 实验不限CPU， ARM/Intel/Risc-V都可以。
+
+## Assignment 1 混合编程的基本思路 
+
+复现Example 1，结合具体的代码说明C代码调用汇编函数的语法和汇编代码调用C函数的语法。例如，结合代码说明`global`、`extern`关键字的作用，为什么C++的函数前需要加上`extern "C"`等， 结果截图并说说你是怎么做的。同时，学习make的使用，并用make来构建Example 1，结果截图并说说你是怎么做的。 
+
+## Assignment 2 使用C/C++来编写内核 
+
+复现Example 2，在进入`setup_kernel`函数后，将输出 Hello World 改为输出你的学号，结果截图并说说你是怎么做的。 
+
+## Assignment 3 中断的处理 
+
+复现Example 3，你可以更改Example中默认的中断处理函数为你编写的函数，然后触发之，结果截图并说说你是怎么做的。 
+
+## Assignment 4 时钟中断 
+
+复现Example 4，仿照Example中使用C语言来实现时钟中断的例子，利用C/C++、 InterruptManager、STDIO和你自己封装的类来实现你的时钟中断处理过程，结果截图并说说你是怎么做的。注意，不可以使用纯汇编的方式来实现。(例如，通过时钟中断，你可以在屏幕的第一行实 现一个跑马灯。跑马灯显示自己学号和英文名，即类似于LED屏幕显示的效果。)
 
 # 实验概述
 
