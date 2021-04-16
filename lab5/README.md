@@ -450,8 +450,6 @@ void itos(char *numStr, uint32 num, uint32 mod);
 
 ```cpp
 void itos(char *numStr, uint32 num, uint32 mod) {
-    numStr[0] = '\0';
-
     // 只能转换2~26进制的整数
     if (mod < 2 || mod > 26 || num < 0) {
         return;
@@ -478,6 +476,8 @@ void itos(char *numStr, uint32 num, uint32 mod) {
     for(int i = 0, j = length - 1; i < j; ++i, --j) {
         swap(numStr[i], numStr[j]);
     }
+    
+    numStr[length] = '\0';
 }
 ```
 
