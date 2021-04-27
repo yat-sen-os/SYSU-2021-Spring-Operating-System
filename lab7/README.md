@@ -4,7 +4,7 @@
 
 + stdlib.h 代码注释, bitmap.h注释修改
 + bitmap解释不清楚
-+ 
++ 引入bitmap的原因
 
 # 参考资料
 

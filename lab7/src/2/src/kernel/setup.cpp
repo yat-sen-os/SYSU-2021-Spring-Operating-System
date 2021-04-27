@@ -12,40 +12,6 @@ InterruptManager interruptManager;
 // 程序管理器
 ProgramManager programManager;
 
-Semaphore semaphore;
-
-int cheese_burger;
-
-void a_mother(void *arg)
-{
-    semaphore.P();
-    int delay = 0;
-
-    printf("mother: start to make cheese burger, there are %d cheese burger now\n", cheese_burger);
-    // make 10 cheese_burger
-    cheese_burger += 10;
-
-    printf("mother: oh, I have to hang clothes out.\n");
-    // hanging clothes out
-    delay = 0xfffffff;
-    while (delay)
-        --delay;
-    // done
-
-    printf("mother: Oh, Jesus! There are %d cheese burgers\n", cheese_burger);
-    semaphore.V();
-}
-
-void a_naughty_boy(void *arg)
-{
-    semaphore.P();
-    printf("boy   : Look what I found!\n");
-    // eat all cheese_burgers out secretly
-    cheese_burger -= 10;
-    // run away as fast as possible
-    semaphore.V();
-}
-
 void first_thread(void *arg)
 {
     // 第1个线程不可以返回
@@ -56,11 +22,13 @@ void first_thread(void *arg)
     }
     stdio.moveCursor(0);
 
-    cheese_burger = 0;
-    semaphore.initialize(1);
-
-    programManager.executeThread(a_mother, nullptr, "second thread", 1);
-    programManager.executeThread(a_naughty_boy, nullptr, "third thread", 1);
+    uint32 memory = *((uint32 *)MEMORY_SIZE_ADDRESS);
+    // ax寄存器保存的内容
+    uint32 low = memory & 0xffff;
+    // bx寄存器保存的内容
+    uint32 high = (memory >> 16) & 0xffff;
+    memory = low * 1024 + high * 64 * 1024;
+    printf("total memory: %d bytes (%d MB)\n", memory, memory / 1024 / 1024);
 
     asm_halt();
 }

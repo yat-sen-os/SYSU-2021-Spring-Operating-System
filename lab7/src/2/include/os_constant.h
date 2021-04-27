@@ -6,4 +6,6 @@
 #define MAX_PROGRAM_NAME 16
 #define MAX_PROGRAM_AMOUNT 16
 
+#define MEMORY_SIZE_ADDRESS 0x7c00
+
 #endif

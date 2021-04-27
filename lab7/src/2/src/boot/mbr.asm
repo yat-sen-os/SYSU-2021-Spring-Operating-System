@@ -25,6 +25,12 @@ load_bootloader:
     add bx, 512
     loop load_bootloader
 
+    ; 获取内存大小
+    mov ax, 0xe801
+    int 15h
+    mov [0x7c00], ax
+    mov [0x7c00+2], bx
+
     jmp 0x0000:0x7e00        ; 跳转到bootloader
 
 jmp $ ; 死循环
