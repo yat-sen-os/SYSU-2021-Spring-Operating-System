@@ -8,15 +8,90 @@
 
 # 参考资料
 
++ [获取内存容量](https://zhuanlan.zhihu.com/p/35776128)
++ 《操作系统真象还原》
+
 # 实验概述
 
 # 实验要求
 
 # 内存的探查
 
-ax = 0xe801
+在进行内存管理之前，我们的首要任务是获取操作系统可管理的内存的容量。在实模式下，我们可以通过`15h`中断来获取机器的内存大小。资料“获取内存容量”中介绍了3种获取机器内存的方法，我们这里选取了功能号为`0xe801`的`15h`中断来获取内存。
 
-int 15h
+此方法相较于另外两种方法较为简单，调用这个功能只需要在ax寄存器中存入功能号0xe801即可，无需其他的输入数据。但是，此方法最大只能获取到4GB的内存空间。中断返回结果是内存的大小，保存在寄存器中。返回的内存大小是分为两部分的，ax寄存器中存放的是低于15MB的内存大小，单位是1KB，bx寄存器中存放的是16MB\~4GB的内存大小，单位是64KB。因此，内存总容量为
+$$
+内存总容量=(\text{ax}\cdot 1024+\text{bx}\cdot64\cdot1024)\ \text{bytes}
+$$
+在bootloader中，我们实现了从实模式跳转到了保护模式，而实模式中断在保护模式下无法使用。因此，我们无法在保护模式下使用`15h`中断来获取内存大小。同时，内存管理的代码又需要运行保护模式下，在不知道内存大小的情况下我们也无法实现内存管理。这就产生了矛盾。矛盾的解决方法也非常简单，我们首先在实模式下调用中断获取内存大小，然后将内存大小写入一个固定的地址，最后在保护模式下建立内存管理时，从这个固定的地址中读出内存大小即可。下面我们来实现我们的想法。
+
+我们首先修改`src/boot/mbr.asm`的代码。在跳转到bootloader前，我们调用中断获取内存的大小，然后将存储中断返回结果的ax和bx寄存器的内容写入地址0x7c00。
+
+```assembly
+...
+
+load_bootloader: 
+    push ax
+    push bx
+    call asm_read_hard_disk  ; 读取硬盘
+    add sp, 4
+    inc ax
+    add bx, 512
+    loop load_bootloader
+
+    ; 获取内存大小
+    mov ax, 0xe801
+    int 15h
+    mov [0x7c00], ax
+    mov [0x7c00+2], bx
+
+    jmp 0x0000:0x7e00        ; 跳转到bootloader
+    
+...
+```
+
+接着，我们在`first_thread`中读取内存大小。
+
+```assembly
+...
+
+void first_thread(void *arg)
+{
+	...
+	
+    uint32 memory = *((uint32 *)MEMORY_SIZE_ADDRESS);
+    // ax寄存器保存的内容
+    uint32 low = memory & 0xffff;
+    // bx寄存器保存的内容
+    uint32 high = (memory >> 16) & 0xffff;
+    memory = low * 1024 + high * 64 * 1024;
+    printf("total memory: %d bytes (%d MB)\n", memory, memory / 1024 / 1024);
+
+    asm_halt();
+}
+
+...
+```
+
+其中，`MEMORY_SIZE_ADDRESS`定义在`include/os_constant.h`下。
+
+```c++
+#define MEMORY_SIZE_ADDRESS 0x7c00
+```
+
+第7行，我们从0x7c00处读入了获取中断的结果。
+
+第8-11行，根据写入时的顺序，`memory`的低16位是ax保存的内容，高16位是bx保存的内容。
+
+第12行，根据上面提到的内存容量的计算公式，我们可以得到内存的容量。
+
+上面的代码运行结果如下。
+
+<img src="gallery/获取内存容量.png" alt="获取内存容量" style="zoom:67%;" />
+
+从结果中可以看到，我们可管理的内存大小是126MB。
+
+得到了内存的大小后，我们来学习如何实现简单的内存管理。
 
 # 位图
 
@@ -266,3 +341,6 @@ void AddressPool::release(const int address, const int amount)
 
 # 虚拟内存管理
 
+# 习题
+
+指定不同的内存
