@@ -22,7 +22,9 @@ int 15h
 
 ## 概念
 
-位图，BitMap，是用于资源管理的一种数据结构。BitMap使用一位来和一个资源单元建立映射关系，例如使用1表示资源单元已经被分配，使用0表示资源单元空闲，如下所示。<img src="gallery/bitmap.png" alt="bitmap" style="zoom:40%;" />
+位图，BitMap，是用于资源管理的一种数据结构。BitMap使用一位来和一个资源单元建立映射关系，例如使用1表示资源单元已经被分配，使用0表示资源单元空闲，如下所示。
+
+<img src="gallery/bitmap.png" alt="bitmap" style="zoom:40%;" />
 
 使用BitMap可以以较小的代价实现对资源的管理。对于4GB的内存，在分页机制下，我们将资源单元定为一个物理页，大小为4KB。因此，使用BitMap来对该内存进行管理时，BitMap的大小为
 $$
