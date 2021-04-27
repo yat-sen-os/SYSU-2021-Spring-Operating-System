@@ -7,5 +7,6 @@
 #define MAX_PROGRAM_AMOUNT 16
 
 #define MEMORY_SIZE_ADDRESS 0x7c00
+#define PAGE_SIZE 4096
 
 #endif

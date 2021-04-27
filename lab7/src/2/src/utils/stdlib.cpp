@@ -48,3 +48,7 @@ void memset(void *memory, char value, int length)
         ((char *)memory)[i] = value;
     }
 }
+
+int ceil(const int dividend, const int divisor) {
+    return (dividend + divisor - 1) / divisor;
+}

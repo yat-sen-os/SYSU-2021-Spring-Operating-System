@@ -16,4 +16,6 @@ void swap(T &x, T &y);
 void itos(char *numStr, uint32 num, uint32 mod);
 // 将从memory开始的length个字节设置为value
 void memset(void *memory, char value, int length);
+// 上取整
+int ceil(const int dividend, const int divisor);
 #endif
