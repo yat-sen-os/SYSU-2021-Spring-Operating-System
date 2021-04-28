@@ -333,7 +333,219 @@ void AddressPool::release(const int address, const int amount)
 
 > 代码放置在`src/3`下。
 
+对于我们的物理内存，我们将其划分为两部分。第一部分是内核空间，第二部分是用户空间。实际上，我们现在编写的所有代码都是运行在内核空间下的。用户空间的概念需要等到我们实现了进程后才会理解。为了便于我们理解这样划分的目的，我们简单地梳理一下二者的区别。
 
+到目前为止，我们在`0x7c00`处放入了MBR，在MBR之后放入了bootloader。在bootloader之后放入了我们的操作系统的代码。现在我们看到的内存安排和存放的内容实际上都是属于内核空间。从另外一个角度来看，现在我们编写的代码的作用包括进程管理、IO管理、中断管理等。显然，这部分代码属于特权代码，只能运行在内核空间下。
+
+对于我们在操作系统上执行的程序，例如hello.cpp
+
+```cpp
+#include <stdio.h>
+
+int main() {
+    printf("Hello World\n");
+}
+```
+
+我们首先会编译这段代码
+
+```shell
+g++ hello.cpp -o hello.out
+```
+
+然后执行
+
+```shell
+./hello.out
+```
+
+此时，我们的操作系统会为可执行文件`hello.out`创建一个进程，这个进程会执行`hello.out`的代码，`hello.out`的数据存放在操作系统为进程分配的空间中，`hello.out`的代码、数据和栈等存放的空间就是用户空间。
+
+每一个程序都有一个独立的用户空间，例如`hello.out`，并且用户空间都是从0开始的。所以，每一时刻，我们操作系统中会存在一个内核空间和若干个用户空间。这些空间为什么不会造成冲突呢？这得益于分页机制。事实上，开启了分页机制后，我们在代码中使用的地址就不再是实际的物理地址，而是线性地址（又称虚拟地址）。CPU会根据线性地址和MMU（Memory Manage Unit）来自动地将线性地址转换为物理地址，然后访问这个物理地址。通过分页机制，我们可以将同一个线性地址映射到不同的物理地址中。而进程和内核都有自己的页目录表和页表，所以我们就可以通过分页机制来保证这些空间不会产生冲突。
+
+为了有效隔离内核和用户程序。我们将整个物理地址空间划分为两部分，内核空间和用户空间。
+
+在我们的操作系统实现当中，我们会使用两个地址池来对这两部分物理地址进行管理。代码放置在`include/memory.h`下，我们使用类`MemoryManager`来执行内存管理。
+
+```cpp
+enum AddressPoolType
+{
+    USER,
+    KERNEL
+};
+
+class MemoryManager
+{
+public:
+    // 可管理的内存容量
+    int totalMemory;
+    // 内核物理地址池
+    AddressPool kernelPhysical;
+    // 用户物理地址池
+    AddressPool userPhysical;
+
+};
+```
+
+接着，我们向`MemoryManager`中加入初始化和分配释放物理内存的函数。
+
+```cpp
+class MemoryManager
+{
+public:
+    // 可管理的内存容量
+    int totalMemory;
+    // 内核物理地址池
+    AddressPool kernelPhysical;
+    // 用户物理地址池
+    AddressPool userPhysical;
+
+public:
+    MemoryManager();
+
+    // 初始化地址池
+    void initialize();
+
+    // 从type类型的物理地址池中分配count个连续的页
+    // 成功，返回起始地址；失败，返回0
+    int allocatePhysicalPages(enum AddressPoolType type, const int count);
+
+    // 释放从paddr开始的count个物理页
+    void releasePhysicalPages(enum AddressPoolType type, const int startAddress, const int count);
+
+    // 获取内存总容量
+    int getTotalMemory();
+
+};
+```
+
+我们接下来看物理内存管理是如何实现的。
+
+首先，在进行物理内存管理之前，我们需要进行初始化。
+
+```cpp
+MemoryManager::MemoryManager() {
+    initialize();
+}
+
+void MemoryManager::initialize()
+{
+    this->totalMemory = 0;
+    this->totalMemory = getTotalMemory();
+
+    // 预留的内存
+    int usedMemory = 256 * PAGE_SIZE + 0x100000;
+    if(this->totalMemory < usedMemory) {
+        printf("memory is too small, halt.\n");
+        asm_halt();
+    }
+    // 剩余的空闲的内存
+    int freeMemory = this->totalMemory - usedMemory;
+
+    int freePages = freeMemory / PAGE_SIZE;
+    int kernelPages = freePages / 2;
+    int userPages = freePages - kernelPages;
+
+    int kernelPhysicalStartAddress = usedMemory;
+    int userPhysicalStartAddress = usedMemory + kernelPages * PAGE_SIZE;
+
+    int kernelPhysicalBitMapStart = BITMAP_START_ADDRESS;
+    int userPhysicalBitMapStart = kernelPhysicalBitMapStart + ceil(kernelPages, 8);
+
+    kernelPhysical.initialize((char *)kernelPhysicalBitMapStart, kernelPages, kernelPhysicalStartAddress);
+    userPhysical.initialize((char *)userPhysicalBitMapStart, userPages, userPhysicalStartAddress);
+
+    printf("total memory: %d bytes ( %d MB )\n", 
+            this->totalMemory, 
+            this->totalMemory / 1024 / 1024);
+
+    printf("kernel pool\n"
+           "    start address: 0x%x\n"
+           "    total pages: %d ( %d MB )\n"
+           "    bitmap start address: 0x%x\n",
+           kernelPhysicalStartAddress, 
+           kernelPages, kernelPages * PAGE_SIZE / 1024 / 1024,
+           kernelPhysicalBitMapStart);
+
+    printf("user pool\n"
+           "    start address: 0x%x\n"
+           "    total pages: %d ( %d MB )\n"
+           "    bit map start address: 0x%x\n",
+           userPhysicalStartAddress, 
+           userPages, userPages * PAGE_SIZE / 1024 / 1024,
+           userPhysicalBitMapStart);
+}
+
+第7-8行，我们读取之前在实模式下使用中断获取的内存大小，读入内存大小的函数如下。
+
+```cpp
+int MemoryManager::getTotalMemory()
+{
+
+    if(!this->totalMemory)
+    {
+        int memory = *((int *)MEMORY_SIZE_ADDRESS);
+        // ax寄存器保存的内容
+        int low = memory & 0xffff;
+        // bx寄存器保存的内容
+        int high = (memory >> 16) & 0xffff;
+
+        this->totalMemory = low * 1024 + high * 64 * 1024;
+        
+    }
+
+    return this->totalMemory;
+}
+```
+
+第11行，我们在内存中预留了部分内存。0x00000000\~0x00100000存放的是我们的内核，1MB以上的剩余部分存放内核页表。
+
+第19-21行，前面我们已经提到，为了简便起见，我们实现的内存管理是页内存管理。并且我们将物理内存空间划分为两部分，内核物理地址空间和用户物理地址空间。这里，我们的划分方式是等分，即两个物理地址空间的大小相同。
+
+第23-24行，我们计算两个物理地址空间的起始地址，用户物理地址空间紧跟在内核物理地址空间后面。
+
+第26-27行，我们在1MB以下的空间处人为划分了两部分区域，用来存放内核空间和用户空间的位图（BitMap）。
+
+第29-30行，我们对两部分空间的地址池进行初始化。
+
+第32-50行，我们将内存管理的基本信息打印出来。
+
+初始化了`MemoryManager`后，我们便可以实现物理内存管理，如下所示。
+
+```cpp
+int MemoryManager::allocatePhysicalPages(enum AddressPoolType type, const int count)
+{
+    int start = -1;
+
+    if (type == AddressPoolType::KERNEL)
+    {
+        start = kernelPhysical.allocate(count);
+    }
+    else if (type == AddressPoolType::USER)
+    {
+        start = userPhysical.allocate(count);
+    }
+
+    return (start == -1) ? 0 : start;
+}
+
+void MemoryManager::releasePhysicalPages(enum AddressPoolType type, const int paddr, const int count)
+{
+    if (type == AddressPoolType::KERNEL)
+    {
+        kernelPhysical.release(paddr, count);
+    }
+    else if (type == AddressPoolType::USER)
+    {
+
+        userPhysical.release(paddr, count);
+    }
+}
+```
+
+代码比较简单，这里便不再赘述。
+
+接下来，我们开始实现操作系统中最精彩的部分——开启分页机制。
 
 # 分页机制
 
