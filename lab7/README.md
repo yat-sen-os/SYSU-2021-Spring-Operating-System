@@ -475,6 +475,7 @@ void MemoryManager::initialize()
            userPages, userPages * PAGE_SIZE / 1024 / 1024,
            userPhysicalBitMapStart);
 }
+```
 
 第7-8行，我们读取之前在实模式下使用中断获取的内存大小，读入内存大小的函数如下。
 
