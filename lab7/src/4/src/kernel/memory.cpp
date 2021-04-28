@@ -6,7 +6,8 @@
 #include "program.h"
 #include "os_modules.h"
 
-MemoryManager::MemoryManager() {
+MemoryManager::MemoryManager()
+{
     initialize();
 }
 
@@ -17,7 +18,8 @@ void MemoryManager::initialize()
 
     // 预留的内存
     int usedMemory = 256 * PAGE_SIZE + 0x100000;
-    if(this->totalMemory < usedMemory) {
+    if (this->totalMemory < usedMemory)
+    {
         printf("memory is too small, halt.\n");
         asm_halt();
     }
@@ -37,15 +39,15 @@ void MemoryManager::initialize()
     kernelPhysical.initialize((char *)kernelPhysicalBitMapStart, kernelPages, kernelPhysicalStartAddress);
     userPhysical.initialize((char *)userPhysicalBitMapStart, userPages, userPhysicalStartAddress);
 
-    printf("total memory: %d bytes ( %d MB )\n", 
-            this->totalMemory, 
-            this->totalMemory / 1024 / 1024);
+    printf("total memory: %d bytes ( %d MB )\n",
+           this->totalMemory,
+           this->totalMemory / 1024 / 1024);
 
     printf("kernel pool\n"
            "    start address: 0x%x\n"
            "    total pages: %d ( %d MB )\n"
            "    bitmap start address: 0x%x\n",
-           kernelPhysicalStartAddress, 
+           kernelPhysicalStartAddress,
            kernelPages, kernelPages * PAGE_SIZE / 1024 / 1024,
            kernelPhysicalBitMapStart);
 
@@ -53,7 +55,7 @@ void MemoryManager::initialize()
            "    start address: 0x%x\n"
            "    total pages: %d ( %d MB )\n"
            "    bit map start address: 0x%x\n",
-           userPhysicalStartAddress, 
+           userPhysicalStartAddress,
            userPages, userPages * PAGE_SIZE / 1024 / 1024,
            userPhysicalBitMapStart);
 }
@@ -90,7 +92,7 @@ void MemoryManager::releasePhysicalPages(enum AddressPoolType type, const int pa
 int MemoryManager::getTotalMemory()
 {
 
-    if(!this->totalMemory)
+    if (!this->totalMemory)
     {
         int memory = *((int *)MEMORY_SIZE_ADDRESS);
         // ax寄存器保存的内容
@@ -99,8 +101,44 @@ int MemoryManager::getTotalMemory()
         int high = (memory >> 16) & 0xffff;
 
         this->totalMemory = low * 1024 + high * 64 * 1024;
-        
     }
 
     return this->totalMemory;
+}
+
+void MemoryManager::openPageMechanism()
+{
+    // 页目录表指针
+    int *directory = (int *)PAGE_DIRECTORY;
+    //线性地址0~4MB对应的页表
+    int *page = (int *)(PAGE_DIRECTORY + PAGE_SIZE);
+
+    // 初始化页目录表
+    memset(directory, 0, PAGE_SIZE);
+    // 初始化线性地址0~4MB对应的页表
+    memset(page, 0, PAGE_SIZE);
+
+    int address = 0;
+    // 将线性地址0~1MB恒等映射到物理地址0~1MB
+    for (int i = 0; i < 256; ++i)
+    {
+        // U/S = 1, R/W = 1, P = 1
+        page[i] = address | 0x7;
+        address += PAGE_SIZE;
+    }
+
+    // 初始化页目录项
+
+    // 0~1MB
+    directory[0] = ((int)page) | 0x07;
+    // 3GB的内核空间
+    directory[768] = directory[0];
+    // 最后一个页目录项指向页目录表
+    directory[1023] = ((int)directory) | 0x7;
+
+    // 初始化cr3，cr0，开启分页机制
+    asm_init_page_reg(directory);
+
+    printf("open page mechanism\n");
+    
 }

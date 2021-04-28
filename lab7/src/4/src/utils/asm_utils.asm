@@ -13,11 +13,30 @@ global asm_disable_interrupt
 global asm_interrupt_status
 global asm_switch_thread
 global asm_atomic_exchange
+global asm_init_page_reg
 extern c_time_interrupt_handler
 ASM_UNHANDLED_INTERRUPT_INFO db 'Unhandled interrupt happened, halt...'
                              db 0
 ASM_IDTR dw 0
          dd 0
+
+; void asm_init_page_reg(int *directory);
+asm_init_page_reg:
+    push ebp
+    mov ebp, esp
+
+    push eax
+
+    mov eax, [ebp + 4 * 2]
+    mov cr3, eax ; 放入页目录表地址
+    mov eax, cr0
+    or eax, 0x80000000
+    mov cr0, eax           ; 置PG=1，开启分页机制
+
+    pop eax
+    pop ebp
+
+    ret
 
 ; void asm_atomic_exchange(uint32 *register, uint32 *memeory);
 asm_atomic_exchange:

@@ -35,6 +35,9 @@ public:
     // 获取内存总容量
     int getTotalMemory();
 
+    // 开启分页机制
+    void openPageMechanism();
+
 };
 
 #endif

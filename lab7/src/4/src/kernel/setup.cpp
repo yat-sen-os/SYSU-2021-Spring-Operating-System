@@ -43,6 +43,7 @@ extern "C" void setup_kernel()
     programManager.initialize();
 
     // 内存管理器
+    memoryManager.openPageMechanism();
     memoryManager.initialize();
 
     // 创建第一个线程
