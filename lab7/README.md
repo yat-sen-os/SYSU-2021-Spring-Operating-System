@@ -1274,7 +1274,5 @@ void MemoryManager::releaseVirtualPages(enum AddressPoolType type, const int vad
 
 至此，页内存分配的实现已经完成，同学们可以自行测试。
 
-
-
 # 习题
 

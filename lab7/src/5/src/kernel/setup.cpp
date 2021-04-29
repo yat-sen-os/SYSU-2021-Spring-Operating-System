@@ -25,6 +25,21 @@ void first_thread(void *arg)
     // }
     // stdio.moveCursor(0);
 
+    char *p1 = (char *)memoryManager.allocatePages(AddressPoolType::KERNEL, 100);
+    char *p2 = (char *)memoryManager.allocatePages(AddressPoolType::KERNEL, 10);
+    char *p3 = (char *)memoryManager.allocatePages(AddressPoolType::KERNEL, 100);
+
+    printf("%x %x %x\n", p1, p2, p3);
+
+    memoryManager.releasePages(AddressPoolType::KERNEL, (int)p2, 10);
+    p2 = (char *)memoryManager.allocatePages(AddressPoolType::KERNEL, 100);
+
+    printf("%x\n", p2);
+
+    p2 = (char *)memoryManager.allocatePages(AddressPoolType::KERNEL, 10);
+    
+    printf("%x\n", p2);
+
     asm_halt();
 }
 
