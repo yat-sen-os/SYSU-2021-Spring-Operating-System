@@ -22,11 +22,11 @@ void first_thread(void *arg)
     }
     stdio.moveCursor(0);
 
-    uint32 memory = *((uint32 *)MEMORY_SIZE_ADDRESS);
+    int memory = *((uint32 *)MEMORY_SIZE_ADDRESS);
     // ax寄存器保存的内容
-    uint32 low = memory & 0xffff;
+    int low = memory & 0xffff;
     // bx寄存器保存的内容
-    uint32 high = (memory >> 16) & 0xffff;
+    int high = (memory >> 16) & 0xffff;
     memory = low * 1024 + high * 64 * 1024;
     printf("total memory: %d bytes (%d MB)\n", memory, memory / 1024 / 1024);
 
