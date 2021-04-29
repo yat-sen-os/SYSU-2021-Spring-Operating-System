@@ -5,6 +5,7 @@
 + stdlib.h 代码注释, bitmap.h注释修改
 + bitmap解释不清楚
 + 引入bitmap的原因
++ 修改线程PCB
 
 # 参考资料
 
@@ -329,7 +330,7 @@ void AddressPool::release(const int address, const int amount)
 
 代码逻辑较为简单，这里便不再赘述。
 
-# 物理内存管理
+# 物理页内存管理
 
 > 代码放置在`src/3`下。
 
@@ -544,9 +545,7 @@ void MemoryManager::releasePhysicalPages(enum AddressPoolType type, const int pa
 }
 ```
 
-代码比较简单，这里便不再赘述。
-
-接下来，我们开始实现操作系统中最精彩的部分——开启分页机制。
+代码比较简单，这里便不再赘述。接下来，我们开始实现操作系统中最精彩的部分——开启分页机制。
 
 # 二级分页机制
 
@@ -822,8 +821,460 @@ extern "C" void setup_kernel()
 
 <img src="gallery/开启分页机制.png" alt="开启分页机制" style="zoom: 67%;" />
 
-# 虚拟内存管理
+# 虚拟页内存管理
+
+> 此后，线性地址统一使用虚拟地址来代替。
+
+## 概述
+
+我们已经知道，开启了分页机制后，程序使用的地址是虚拟地址，虚拟地址都需要经过二级页表转换成物理地址后CPU才可以正常访问指令和数据。由此而产生的效果是，连续的虚拟地址对应不连续的物理地址，这种对应关系由二级页表来维护。
+
+由于我们同时需要处理两个地址空间的内容，当我们进行页内存分配时，需要分别标识虚拟地址的分配状态和物理地址的分配状态，由此而产生了两种地址池——虚拟地址池和物理地址池。当我们需要进行连续的页内存分配时，我们先从虚拟地址池中取出连续的多个虚拟页，注意，虚拟页之间的虚拟地址是连续的。之后，我们从物理地址池中为每一个虚拟页分配相应大小的物理页，然后在二级页表中建立虚拟页和物理页之间的对应关系。此时，由于分页机制的存在，物理页的地址可以不连续。CPU的MMU会在程序执行过程中将虚拟地址翻译成物理地址。
+
+例如，我们需要8个页的内存块。所以我们先从虚拟地址池中取出8个页的虚拟内存块的起始地址，此时8个页的虚拟地址是连续的。然后我们从物理地址池中先分配1页，建立和第1个虚拟页的对应关系；从物理地址池中分配1页，建立和第2个虚拟页的对应关系......如此进行下去，直到第8个虚拟页和物理页的对应关系被建立。显然，被分配的物理页的地址可以不连续，因此也就实现了连续的虚拟内存块对应不连续的物理内存块，如下所示。
+
+<img src="gallery/页内存分配过程.png" alt="页内存分配过程" style="zoom:30%;" />
+
+前面我们已经实现了物理页内存管理。而在开启分页机制后，我们使用的地址是虚拟地址。因此，接下来我们来实现虚拟页内存管理。
+
+## 初始化
+
+特别注意，在开启分页机制后，程序使用的地址空间是虚拟地址空间。CPU会使用MMU来自动地将虚拟地址转换成物理地址。因此，对于程序中的一个地址，其对应的物理地址不一定等于这个地址的值。我们需要将其拆开成三部分来看待，即考察其页目录项、页表项和页内偏移，经过层层转换后才能得到我们的物理地址。通过分页机制，我们能够将连续的虚拟地址变换到不连续的物理地址。这是分页机制最精彩的地方，也是分页机制最令人困惑的地方。
+
+开启了分页机制后，程序看到的空间不再是物理地址空间，而是虚拟地址空间。为了实现内存管理，对于虚拟地址空间中的地址，我们也需要通过一个地址池来进行管理。这个地址池被称为虚拟地址池。注意到，我们只有两个物理地址池，内核物理地址池和用户物理地址池。但是，虚拟地址池可以有多个。因为我们后面会实现用户进程，用户进程实际上是运行中的程序。我们将程序编译好之后就放在文件系统中，当我们需要执行这个程序时，我们会为这个程序创建进程，然后分配内存，建立程序的线性地址到内存物理地址的映射，最后再将程序复制到内存中的，由调度算法调度执行。此时，用户地址的线性地址是从0开始的。我们将用户看到的地址空间称为用户虚拟地址空间，将内核看到的地址空间称为内核虚拟地址空间。
+
+为什么这些虚拟地址空间不会发生冲突呢？因为用户进程有自己的页目录表和页表，即使用户进程和内核、用户进程之间的线性地址相同，由于映射关系不同，也可以对应到不同的物理地址。此时，我们的操作系统中会存在一个内核虚拟地址空间和若干个不同的用户虚拟地址空间。
+
+因此，我们有4种地址空间，用户虚拟地址空间，用户物理地址空间，内核虚拟地址空间，内核物理地址空间。4种地址空间通过4种地址池来管理，用户虚拟地址池、用户物理地址池、内核虚拟地址池和内核物理地址池。但是，每一个进程都有自己的用户虚拟地址池，因此并不是全局的，而是放到了PCB中。内存管理器`MemoryManager`只需要关心全局的地址空间即可，即用户物理地址空间，内核虚拟地址空间，内核物理地址空间，由此而产生了3个地址池`kernelPhysical`，`kernelVirtual`和`userPhysical`。
+
+我们在前面的`MemoryManager`的基础上加入内核虚拟地址池。
+
+```cpp
+class MemoryManager
+{
+public:
+    // 可管理的内存容量
+    int totalMemory;
+    // 内核物理地址池
+    AddressPool kernelPhysical;
+    // 用户物理地址池
+    AddressPool userPhysical;
+    // 内核虚拟地址池
+    AddressPool kernelVirtual;
+    
+public:
+	...
+};
+```
+
+接着，我们修改`MemoryManager::initialize`，加入初始化内核虚拟地址池`kernelVirtual`的代码。
+
+```cpp
+void MemoryManager::initialize()
+{
+    this->totalMemory = 0;
+    this->totalMemory = getTotalMemory();
+
+    // 预留的内存
+    int usedMemory = 256 * PAGE_SIZE + 0x100000;
+    if (this->totalMemory < usedMemory)
+    {
+        printf("memory is too small, halt.\n");
+        asm_halt();
+    }
+    // 剩余的空闲的内存
+    int freeMemory = this->totalMemory - usedMemory;
+
+    int freePages = freeMemory / PAGE_SIZE;
+    int kernelPages = freePages / 2;
+    int userPages = freePages - kernelPages;
+
+    int kernelPhysicalStartAddress = usedMemory;
+    int userPhysicalStartAddress = usedMemory + kernelPages * PAGE_SIZE;
+
+    int kernelPhysicalBitMapStart = BITMAP_START_ADDRESS;
+    int userPhysicalBitMapStart = kernelPhysicalBitMapStart + ceil(kernelPages, 8);
+    int kernelVirtualBitMapStart = userPhysicalBitMapStart + ceil(userPages, 8);
+
+    kernelPhysical.initialize(
+        (char *)kernelPhysicalBitMapStart,
+        kernelPages,
+        kernelPhysicalStartAddress);
+
+    userPhysical.initialize(
+        (char *)userPhysicalBitMapStart,
+        userPages,
+        userPhysicalStartAddress);
+
+    kernelVirtual.initialize(
+        (char *)kernelVirtualBitMapStart,
+        kernelPages,
+        KERNEL_VIRTUAL_START);
+
+    printf("total memory: %d bytes ( %d MB )\n",
+           this->totalMemory,
+           this->totalMemory / 1024 / 1024);
+
+    printf("kernel pool\n"
+           "    start address: 0x%x\n"
+           "    total pages: %d ( %d MB )\n"
+           "    bitmap start address: 0x%x\n",
+           kernelPhysicalStartAddress,
+           kernelPages, kernelPages * PAGE_SIZE / 1024 / 1024,
+           kernelPhysicalBitMapStart);
+
+    printf("user pool\n"
+           "    start address: 0x%x\n"
+           "    total pages: %d ( %d MB )\n"
+           "    bit map start address: 0x%x\n",
+           userPhysicalStartAddress,
+           userPages, userPages * PAGE_SIZE / 1024 / 1024,
+           userPhysicalBitMapStart);
+
+    printf("kernel virtual pool\n"
+           "    start address: 0x%x\n"
+           "    total pages: %d  ( %d MB ) \n"
+           "    bit map start address: 0x%x\n",
+           KERNEL_VIRTUAL_START,
+           userPages, kernelPages * PAGE_SIZE / 1024 / 1024,
+           kernelVirtualBitMapStart);
+}
+```
+
+第21行、第25行和第62-68行是我们新加入的内容，我们现在重新来分析`MemoryManager::initialize`的实现。
+
+第7行，我们假设内核很小，只放在0\~1MB的内存物理地址空间中，并且将0\~1MB的内存固定分配给内核。此时，我们已经使用了1MB的内存。但是，`256 * PAGE_SIZE`这256个页表是从哪里来的呢？注意到我们的页目录表放在了0x100000处，起始地址为0x101000的页表存放了指向物理地址0\~1MB的物理页的256个页表项。但是，除去放置在0x100000和0x101000的两个页表，另外254个页表是用来做什么的呢？
+
+我们已经知道，用户进程有自己的独立虚拟地址空间。但是，用户进程如果想要通信，那么这些用户进程之间就需要有一块共享的公共区域，这个共享的公共区域是内核虚拟地址空间。为此，我们将内核虚拟地址空间映射到用户虚拟地址空间的3GB\~4GB（0xc0000000\~0xffffffff）范围内。这样，每一个用户进程的3GB\~4GB范围都是共享的内核空间。注意到，3GB\~4GB的虚拟地址空间对应的页目录项是第768\~1023个页目录项。在我们建立分页机制的时候，即在`MemoryManager::openPageMechanism`中，我们令第768个页目录项和第0个页目录项相同。所以，当我们访问3GB\~4GB的范围的虚拟地址时，我们访问的便是内核。对于进程的页目录表，我们只需要保持虚拟地址3GB\~4GB对应的页目录项和内核真正的虚拟地址对应的页目录项相同即可。此时，对于任意一个真正的内核虚拟地址`address`，虚拟地址`address+0xc0000000`和`address`具有相同的物理地址。
+
+注意到768\~1023之间总共有256个页目录项，而第1023个页目录项指向了页目录表本身，因此只有255个页表项。为了方便，我们将这255个页目录项指向的页表安排在了页目录表之后，于是，255个页表加上1个页目录表恰好是256个页表。这便是第7行代码预留的空间的含义。
+
+第25行，我们安排内核虚拟地址空间的位图在用户物理地址空间的位图之后。
+
+第37-40行，由于0\~1MB的内核空间已经占据了虚拟地址`0x100000`以下的空间，因此我们定义内核虚拟地址池的起始地址是`0x100000`。但我们希望所有进程都能够共享内核分配的页内存，因此我们把起始地址加上`0xc0000000`后，就能将内核提升到3GB\~4GB的虚拟地址空间中，也就是`0xc0100000`。
+
+```cpp
+#define KERNEL_VIRTUAL_START 0xc0100000
+```
+
+此时，我们完成了内存管理器的初始化。
+
+## 页内存分配
+
+初始化内存管理器之后，我们就可以实现页内存分配了。由于我们使用了分页机制，我们的程序使用的是虚拟地址空间的地址，虚拟地址最终会经过分页机制变换到物理地址。也就是说，对每一个虚拟地址，我们都要通过分页机制为其指定一个对应的物理地址。
+
+因此，页内存分配分为以下3步。
+
++ 从虚拟地址池中分配若干连续的虚拟页。
++ 对每一个虚拟页，从物理地址池中分配1页。
++ 为虚拟页建立页目录项和页表项，使虚拟页内的地址经过分页机制变换到物理页内。
+
+负责页内存分配的函数如下所示。
+
+```cpp
+int MemoryManager::allocatePages(enum AddressPoolType type, const int count)
+{
+    // 第一步：从虚拟地址池中分配若干虚拟页
+    int virtualAddress = allocateVirtualPages(type, count);
+    if (!virtualAddress)
+    {
+        return 0;
+    }
+
+    bool flag;
+    int physicalPageAddress;
+    int vaddress = virtualAddress;
+
+    // 依次为每一个虚拟页指定物理页
+    for (int i = 0; i < count; ++i, vaddress += PAGE_SIZE)
+    {
+        flag = false;
+        // 第二步：从物理地址池中分配一个物理页
+        physicalPageAddress = allocatePhysicalPages(type, 1);
+        if (physicalPageAddress)
+        {
+            //printf("allocate physical page 0x%x\n", physicalPageAddress);
+            
+            // 第三步：为虚拟页建立页目录项和页表项，使虚拟页内的地址经过分页机制变换到物理页内。
+            flag = connectPhysicalVirtualPage(vaddress, physicalPageAddress);
+        }
+        else
+        {
+            flag = false;
+        }
+
+        // 分配失败，释放前面已经分配的虚拟页和物理页表
+        if (!flag)
+        {
+            // 前i个页表已经指定了物理页
+            releasePages(type, virtualAddress, i);
+            // 剩余的页表未指定物理页
+            releaseVirtualPages(type, virtualAddress + i * PAGE_SIZE, count - i);
+            return 0;
+        }
+    }
+
+    return virtualAddress;
+}
+```
+
+第32-40行，当我们在为连续的虚拟页逐个分配物理页时，若遇到无法分配物理页的情况，那么说明我们无法分配所需的内存空间，此时我们应该返回0。但是，由于我们之前已经逐步地为每一个虚拟页建立到一个物理页的映射关系，在返回前，之前成功分配的虚拟页和物理页都要释放。否则就会造成内存泄漏，这部分内存无法再被分配。内存的释放我们留到后面再分析。
+
+从这里可以看到，我们分配的虚拟地址是连续的，但虚拟页对应的物理页可以是不连续的。通过分页机制，我们可以把连续的地址变换到不连续的地址中，这就是分页机制的精妙之处。
+
+下面我们分别来看页内存分配的每个步骤。
+
+**第一步，从虚拟地址池中分配若干连续的虚拟页**。虚拟页的分配通过函数`allocateVirtualPages`来实现，如下所示。
+
+```cpp
+int allocateVirtualPages(enum AddressPoolType type, const int count)
+{
+    int start = -1;
+
+    if (type == AddressPoolType::KERNEL)
+    {
+        start = kernelVrirtual.allocate(count);
+    }
+
+    return (start == -1) ? 0 : start;
+}
+```
+
+由于我们没有实现用户进程，此时能够分配页内存的地址池只有内核虚拟地址池。因此，对于其他类型的地址池，一律返回0，即分配失败。
+
+**第二步，对每一个虚拟页，从物理地址池中分配1页**。物理页的分配通过函数`allocatePhysicalPages`来实现，这里便不再赘述。我们的物理地址池有两个，用户物理地址池和内核物理地址池，因此在分配物理页的时候也应该区别对待。
+
+**第三步，为虚拟页建立页目录项和页表项，使虚拟页内的地址经过分页机制变换到物理页内**。建立虚拟页到物理页的映射关系通过函数`connectPhysicalVirtualPage`来实现，如下所示。
+
+```cpp
+bool MemoryManager::connectPhysicalVirtualPage(const int virtualAddress, const int physicalPageAddress)
+{
+    // 计算虚拟地址对应的页目录项和页表项
+    int *pde = (int *)toPDE(virtualAddress);
+    int *pte = (int *)toPTE(virtualAddress);
+
+    // 页目录项无对应的页表，先分配一个页表
+    if(!(*pde & 0x00000001)) 
+    {
+        // 从内核物理地址空间中分配一个页表
+        int page = allocatePhysicalPages(AddressPoolType::KERNEL, 1);
+        if (!page)
+            return false;
+
+        // 使页目录项指向页表
+        *pde = page | 0x7;
+        // 初始化页表
+        char *pagePtr = (char *)(((int)pte) & 0xfffff000);
+        memset(pagePtr, 0, PAGE_SIZE);
+    }
+
+    // 使页表项指向物理页
+    *pte = physicalPageAddress | 0x7;
+
+    return true;
+}
+
+```
+
+在建立虚拟页到物理页的映射关系之前，我们回忆一下在二级分页机制下，虚拟地址是如何变换到物理地址的。考虑一个虚拟地址$virtual$，变换过程如下所示。
+
++ CPU先取虚拟地址的31-22位$virtual[31:22]$，在cr3寄存器中找到页目录表的物理地址，然后根据页目录表的物理地址在页目录表中找到序号为$virtual[31:22]$的页目录项，读取页目录项中的页表的物理地址。
++ CPU再取虚拟地址的21-12位$virtual[21:12]$，根据第一步取出的页表的物理地址，在页表中找到序号为$virtual[21:12]$的页表项，读取页表项中的物理页的物理地址$physical$。
++ 用物理页的物理地址的31-12位$physical[31:12]$替换虚拟地址的31-12位$virtual[31:12]$得到的结果就是虚拟地址对应的物理地址。
+
+注意，只有程序才会使用虚拟地址，cr3寄存器，页目录项，页表项和CPU寻址中的地址都是物理地址。
+
+页内存分配就是为若干个连续的虚拟页指定物理页的过程。而CPU是根据页目录表和页表的内容来找到虚拟页对应的物理页的。因此，为了给一个虚拟页指定物理页，我们只需要修改虚拟页地址对应的页表项和页目录项即可。显然，一个虚拟页中的虚拟地址对应的页目录项和页表项是相同的。
+
+为了修改页目录项和页表项的物理地址，我们首先要构造出虚拟地址对应的页目录项和页表项虚拟地址。这里，同学们会有疑问——“我们已经知道了页目录表的物理地址，为什么不直接使用这个物理地址呢？”。这是因为程序使用的是虚拟地址，即便我们使用的是物理地址，但CPU还会将这个物理地址当初虚拟地址来对待。既然这个“物理地址”是虚拟地址，那么CPU在寻址的时候还是会经过找页目录项，找页表项，物理地址替换三个步骤来得到CPU认为的物理地址。显然，这样做就会出错。
+
+这就回到了教程反复强调的问题——在开启分页机制后，对于一个地址，我们一定要想清楚是虚拟地址还是物理地址，如果是虚拟地址，则需要拆分成三部分来看待，绝对不可以当成物理地址来看待。这一点在刚开始接触的时候理解起来比较抽象。
+
+因此，为了访问虚拟地址对应的页目录项和页表项，我们需要根据页目录项和页表项将页目录项和页表项的虚拟地址构造出来。我们主要解决如下两个问题。
+
++ 根据页目录项的序号构造出这个页目录项的虚拟地址。
++ 根据页目录项和页表项的序号构造出这个页表项的虚拟地址。
+
+对于一个虚拟地址，我们需要构造三部分的信息，页目录号$virtual[31:22]$，页号$virutal[21:12]$和偏移地址$virtual[11:0]$。
+
+考虑虚拟地址$virtual$，我们下面首先来看$virtual$的页目录项$pde$(Page Directory Entry)的构造方法。
+
+在开启分页机制的时候，我们设置最后一个页目录项指向了页目录表。
+
+```cpp
+void MemoryManager::openPageMechanism()
+{
+	...
+        
+    // 最后一个页目录项指向页目录表
+    directory[1023] = ((int)directory) | 0x7;
+
+    ...
+}
+```
+
+这样做目的就是为了构造页目录项和页表项的虚拟地址。
+
+首先，页目录项所在的物理页是页目录表，$virtual$的页目录号是$virtual[31:22]$，而每一个页目录项的大小是4个字节，因此页内偏移为
+$$
+pde[11:0]=4\times virtual[31:22]
+$$
+接下来我们构造$pde[21:12]$。$pde$是位于页目录表的，那么，在现有的页表中，哪一个页表中的哪一个页表项指向了页目录表呢？实际上，页目录表是页表的一种特殊形式，页目录表的第1023个页目录项指向了页目录表。因此我们有
+$$
+pde[21:12]=1111111111_2
+$$
+其中，下标2表示二进制，$2^{10}-1=1023$。
+
+最后，我们来构造$pde[31:22]$。在构造$pde[21:12]$的时候，我们把页目录表当成了页表，而$pde[31:22]$是页目录项的序号，我们需要知道页目录表的哪一个页表项指向了这个“页表”。显然，答案是第1023个页表项，因此我们有
+$$
+pde[31:22]=1111111111_2
+$$
+至此，我们已经完成了页目录项的构建。
+
+我们现在来看一个从虚拟地址到物理地址变换的例子来加深对上述过程的理解。假设我们需要构造虚拟地址`0x2a49fe12`对应的页目录项，分下面三步完成。
+$$
+\begin{align}
+&virtual[31:22]=0xa9=169\\
+&virtual[21:12]=0x9f=159\\
+&pde[11:0]=4\times virutal[31:22]=4\times159=0x27c\\
+&pde[21:12]=0x3ff\\
+&pde[31:22]=0x3ff\\
+\end{align}
+$$
+因此，$pde$的值为$0xffffff27c$，然后我们将这个虚拟地址转换到物理地址。
+
++ 先取虚拟地址的31-22位$pde[31:22]$，在cr3寄存器中找到页目录表的物理地址，然后根据页目录表的物理地址在页目录表中找到序号为$pde[31:22]$的页目录项，读取页目录项中的页表的物理地址。取出的页目录项是第1023个页目录项，这个页目录项指向了页目录表。
++ CPU再取虚拟地址的21-12位$pde[21:12]$，根据第一步取出的页表的物理地址，在页表中找到序号为$pde[21:12]$的页表项，读取页表项中的物理页的物理地址$physical$。此时的页表是页目录表，读取的页表项是第1023个页目录项，这个页表项指向了页目录表。
++ 用物理页的物理地址的的31-12位$physical[31:12]$替换虚拟地址的31-12位$pde[31:12]$得到的结果就是虚拟地址对应的物理地址。
+
+现在，我们来构建页表项$pte$（Page Table Entry）。理解了$pde$的构造就不难理解$pte$的构造。
+
+首先，页表项所在的物理页是页表，$virtual$的页号是$virtual[21:12]$，而每一个页表项的大小是4个字节，因此我们有
+$$
+pte[11:0]=4\times virtual[21:12]
+$$
+接下来我们构造$pte[21:12]$。$pte$是位于页表的，那么，在现有的页表中，哪一个页表的哪一个页表项指向了$pte$所在的页表呢？回忆起二级分页机制的地址变换过程我们发现，页目录表的第$virutal[31:22]$个页目录项指向了这个页表，因此我们有
+$$
+pte[21:12]=virtual[31:22]
+$$
+最后，我们来构造$pde[31:22]$。我们实际上把页目录表当成了页表，而$pte[31:22]$是页目录项的序号，我们需要知道页目录表的哪一个页表项指向了这个“页表”显然，答案是第1023个页表项，因此我们有
+$$
+pte[31:22]=1111111111_2
+$$
+写成代码如下所示。
+
+```cpp
+int toPDE(const int virtualAddress)
+{
+    return (0xfffff000 + (((virtualAddress & 0xffc00000) >> 22) * 4));
+}
+
+int toPTE(const int virtualAddress)
+{
+    return (0xffc00000 + ((virtualAddress & 0xffc00000) >> 10) + (((virtualAddress & 0x003ff000) >> 12) * 4));
+}
+```
+
+找到虚拟地址对应的pde和pte后，我们便可以建立虚拟页到物理页的映射。
+
+首先，我们检查pde中是否有对应的页表。如果没有，就要先分配一个物理页，然后初始化这新分配的物理页并将其地址写入pde，以作为pde指向的页表。在pde对应的物理页存在的前提下，将之前为虚拟页分配的物理页地址写入pte即可。
+
+```cpp
+bool MemoryManager::connectPhysicalVirtualPage(const int virtualAddress, const int physicalPageAddress)
+{
+    // 计算虚拟地址对应的页目录项和页表项
+    int *pde = (int *)toPDE(virtualAddress);
+    int *pte = (int *)toPTE(virtualAddress);
+
+    // 页目录项无对应的页表，先分配一个页表
+    if(!(*pde & 0x00000001)) 
+    {
+        // 从内核物理地址空间中分配一个页表
+        int page = allocatePhysicalPages(AddressPoolType::KERNEL, 1);
+        if (!page)
+            return false;
+
+        // 使页目录项指向页表
+        *pde = page | 0x7;
+        // 初始化页表
+        char *pagePtr = (char *)(((int)pte) & 0xfffff000);
+        memset(pagePtr, 0, PAGE_SIZE);
+    }
+
+    // 使页表项指向物理页
+    *pte = physicalPageAddress | 0x7;
+
+    return true;
+}
+```
+
+此时，我们已经实现了虚拟页内存分配。
+
+## 页内存释放
+
+但我们在分配页内存时，如果遇到物理页无法分配的情况，之前成功分配的虚拟页和物理页都要释放。否则就会造成内存泄漏，这部分内存无法再被分配，释放页内存如下。
+
+```cpp
+void MemoryManager::releasePages(enum AddressPoolType type, const int virtualAddress, const int count)
+{
+    int vaddr = virtualAddress;
+    int *pte, *pde;
+    bool flag;
+    const int ENTRY_NUM = PAGE_SIZE / sizeof(int);
+
+    for (int i = 0; i < count; ++i, vaddr += PAGE_SIZE)
+    {
+        releasePhysicalPages(type, vaddr2paddr(vaddr), 1);
+
+        // 设置页表项为不存在，防止释放后被再次使用
+        pte = (int *)toPTE(vaddr);
+        *pte = 0;
+    }
+
+    releaseVirtualPages(type, virtualAddress, count);
+}
+```
+
+页内存的释放是页内存分配的过程，分2个步骤完成。
+
++ 对每一个虚拟页，释放为其分配的物理页。
++ 释放虚拟页。
+
+我们分别来看上面两个步骤。
+
+**第一步，对每一个虚拟页，释放为其分配的物理页**。首先，由于物理地址池存放的是物理地址，为了释放物理页，我们要找到虚拟页对应的物理页的物理地址，如下所示。
+
+```cpp
+int MemoryManager::vaddr2paddr(int vaddr)
+{
+    int *pte = (int *)toPTE(vaddr);
+    int page = (*pte) & 0xfffff000;
+    int offset = vaddr & 0xfff;
+    return (page + offset);
+}
+```
+
+根据分页机制，一个虚拟地址对应的物理页的地址是存放在页表项中的。因此，我们先求出虚拟地址的页表项的虚拟地址，然后访问页表项，取页表项内容的31-12位就是物理页的物理地址，最后替换虚拟地址的31-12位即可得到虚拟地址对应的物理地址。
+
+然后我们释放物理页。释放了物理页后，我们就要将虚拟页对应的页表项置0，这是为了防止在虚拟页释放后被再次寻址。
+
+**第二步，释放虚拟页**。释放虚拟页的函数如下所示。
+
+```cpp
+void MemoryManager::releaseVirtualPages(enum AddressPoolType type, const int vaddr, const int count)
+{
+    if (type == AddressPoolType::KERNEL)
+    {
+        kernelVirtual.release(vaddr, count);
+    }
+}
+```
+
+我们现在还没实现用户进程，而每一个用户进程都有自己独立的虚拟地址池，因此这里我们只处理内核虚拟地址池中的地址，等到我们实现了用户进程后再修改这部分的代码。
+
+至此，页内存分配的实现已经完成，同学们可以自行测试。
+
+
 
 # 习题
 
-指定不同的内存
