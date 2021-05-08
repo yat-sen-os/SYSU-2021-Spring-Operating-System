@@ -316,11 +316,11 @@ extern "C" void setup_kernel()
 注意，在进程中，我们是直接使用变量名`programmerManager`来访问其成员函数的，而程序在编译后的地址默认是相对于0的偏移地址。此时，为了使进程能够对`programmerManager`进行正确寻址，我们需要在链接时指定代码中的变量是相对于`0xc0000000`偏移的，我们将makefile修改如下。
 
 ```makefile
-kernel.bin : entry.obj $(OBJ)
-	$(LINKER) -o kernel.bin -melf_i386 -N entry.obj $(OBJ) -e enter_kernel -Ttext 0xc0020000 --oformat binary
+kernel.bin : kernel.o
+	objcopy -O binary kernel.o kernel.bin
 	
 kernel.o : entry.obj $(OBJ)
-	$(LINKER) -o kernel.o -melf_i386 -N entry.obj $(OBJ) -e enter_kernel -Ttext 0xc0020000
+	$(LINKER) -o kernel.o -melf_i386 -N entry.obj $(OBJ) -Ttext 0xc0020000 -e enter_kernel
 ```
 
 其中，`-Ttext`参数本来是`0x20000`，现在我们将其提升到3GB的空间。
@@ -416,14 +416,14 @@ load_kernel:
     loop load_kernel
 ```
 
-最后我们修改一下makefile中生成bootloader.bin的代码。
+最后删掉`bootloader.asm`开头的`org`伪指令，然后修改makefile中生成bootloader.bin的代码。
 
 ```makefile
 bootloader.bin : $(SRCDIR)/boot/bootloader.asm 
-	@$(ASM_COMPILER) -o bootloader.o -f elf32 -I$(INCLUDE_PATH)/ $(SRCDIR)/boot/bootloader.asm
-	@$(CXX_COMPLIER) -o page.o $(CXX_COMPLIER_FLAGS) -I$(INCLUDE_PATH) -c $(SRCDIR)/boot/page.cpp
-	@$(LINKER) -o bootloader.bin -melf_i386 -N  bootloader.o page.o -Ttext 0x0 --oformat binary
-	@rm -f bootloader.o page.o
+	$(ASM_COMPILER) -o bootloader.o -g -f elf32 -I$(INCLUDE_PATH)/ $(SRCDIR)/boot/bootloader.asm
+	$(CXX_COMPLIER) -o page.o $(CXX_COMPLIER_FLAGS) -I$(INCLUDE_PATH) -c $(SRCDIR)/boot/page.cpp
+	$(LINKER) -o bootloader.obj -melf_i386 -N  bootloader.o page.o -Ttext 0x7e00 -e bootloader_start
+	objcopy -O binary bootloader.obj bootloader.bin
 ```
 
 我们将`os_constant.h`中的地址也提升到3GB以上的空间。
@@ -453,9 +453,35 @@ void STDIO::initialize()
 }
 ```
 
-最后编译运行即可，此时我们就完成了进程创建前的准备，我们接下来初始化TSS。
+在`build`目录下，编译运行即可。
+
+```shell
+make clean && make && make run
+```
+
+结果如下。
+
+<img src="/home/nelson/oslab/lab8/gallery/进程创建前的准备.png" alt="进程创建前的准备" style="zoom:67%;" />
+
+此时我们就完成了进程创建前的准备。接下来，我们来初始化TSS。
 
 ## 初始化TSS和用户段描述符
+
+我们首先向`ProgramManager`中加入存储3个代码段、数据段和栈段描述符的变量。
+
+```cpp
+class ProgramManager
+{
+public:
+    List allPrograms;        // 所有状态的线程/进程的队列
+    List readyPrograms;      // 处于ready(就绪态)的线程/进程的队列
+    PCB *running;            // 当前执行的线程
+    int USER_CODE_SELECTOR;  // 用户代码段选择子
+    int USER_DATA_SELECTOR;  // 用户数据段选择子
+    int USER_STACK_SELECTOR; // 用户栈段选择子
+    ...
+}
+```
 
 由于进程的运行环境需要用到TSS、特权级3下的平坦模式代码段和数据段描述符，我们现在来初始化这些内容，如下所示。
 
@@ -466,37 +492,44 @@ void ProgramManager::initialize()
     readyPrograms.initialize();
     running = nullptr;
 
+    for (int i = 0; i < MAX_PROGRAM_AMOUNT; ++i)
+    {
+        PCB_SET_STATUS[i] = false;
+    }
+
+    // 初始化用户代码段、数据段和栈段
     int selector;
+
     selector = asm_add_global_descriptor(USER_CODE_LOW, USER_CODE_HIGH);
     USER_CODE_SELECTOR = (selector << 3) | 0x3;
 
     selector = asm_add_global_descriptor(USER_DATA_LOW, USER_DATA_HIGH);
     USER_DATA_SELECTOR = (selector << 3) | 0x3;
-    
+
     selector = asm_add_global_descriptor(USER_STACK_LOW, USER_STACK_HIGH);
     USER_STACK_SELECTOR = (selector << 3) | 0x3;
-
 
     initializeTSS();
 }
 ```
 
-首先，我们向GDT中新增用户代码段描述符，数据段描述符和栈段描述符，这几个描述符和之前的不同之处仅在于我们将DPL修改为3，如下所示。
+第13-22行，我们向GDT中新增用户代码段描述符，数据段描述符和栈段描述符。这3个描述符和之前的描述符不同之处在于DPL。之前的描述符的DPL为0，而现在我们加入的3个描述符的DPL为3，如下所示。
 
 ```cpp
-#define USER_CODE_LOW 0x0000ffff
+#define USER_CODE_LOW  0x0000ffff
 #define USER_CODE_HIGH 0x00cff800
 
-#define USER_DATA_LOW 0x0000ffff
+#define USER_DATA_LOW  0x0000ffff
 #define USER_DATA_HIGH 0x00cff200
 
-#define USER_STACK_LOW 0x0
+#define USER_STACK_LOW  0x00000000
 #define USER_STACK_HIGH 0x0040f600
 ```
 
 然后我们将这个几个段描述符送入GDT，如下所示。
 
 ```cpp
+; int asm_add_global_descriptor(int low, int high);
 asm_add_global_descriptor:
     push ebp
     mov ebp, esp
@@ -528,13 +561,23 @@ asm_add_global_descriptor:
     ret
 ```
 
-`asm_add_global_descriptor`先读入GDTR的内容，然后找到GDT的起始地址和偏移地址，然后在GDT的末尾新增一个段描述符，最后再将GDT的界限增加8并更新GDTR，返回新增的段描述符的位置。
+`asm_add_global_descriptor`的作用是将给定的段描述符放入GDT，并更新GDTR的内容，最后返回段描述符在GDT的位置。
 
-最后，为了使加载这几个段描述符后CPL=3，我们设置这几个段的段选择子的RPL=3，接下来我们初始化TSS。
+第9-13行，先读入GDTR的内容，然后找到GDT的起始地址和偏移地址。
 
-当我们从低特权级向高特权级转移时，CPU首先会在TSS中找到高特权级栈的段选择子和栈指针，然后送入SS，ESP，接着将中断发生前的SS，ESP，EFLAGS、CS、EIP依次压入高特权级栈。本来TSS是用于CPU原生的进程切换的状态保存器，但我并不打算使用这套方案。因此，TSS的作用仅限于向CPU提供进程特权级转移时的栈段选择子和栈指针。
+第15-18行，在GDT的末尾新增一个段描述符。
 
-我们创建一个TSS的结构体，如下所示，代码保存在`include/tss.h`中。
+第20-21行，计算段描述符在GDT的位置，并放入eax寄存器中。
+
+第23-24行，将GDT的界限增加8并更新GDTR。
+
+我们现在继续分析函数`ProgramManager::initialize`。
+
+加入段描述符后，为了使加载这几个段描述符后的CPL=3，我们需要设置这几个段的段选择子的RPL=3，接下来我们初始化TSS。
+
+当我们从低特权级向高特权级转移时，CPU首先会在TSS中找到高特权级栈的段选择子和栈指针，然后送入SS，ESP，接着将中断发生前的SS、ESP、EFLAGS、CS、EIP依次压栈。注意，此时的栈已经变成了TSS保存的高特权级的栈。TSS本来是用于CPU原生的进程切换的状态保存器，但我们并不打算使用CPU原生的进程切换方案，我们和Linux一样实现自己的进程切换方案。因此，TSS的作用仅限于向CPU提供进程特权级转移时的栈段选择子和栈指针。
+
+按照TSS的图示，我们创建一个TSS的结构体，如下所示，代码保存在`include/tss.h`中。
 
 ```cpp
 #ifndef TSS_H
@@ -574,19 +617,9 @@ public:
 #endif
 ```
 
-注意，TSS的内容必须如此安排，否则CPU在自动加载TSS的时候会加载到错误的数据。然后我们在`include/os_modules.h`中定义这个TSS的实例，如下所示。
+注意，TSS的内容必须如此安排，因为CPU规定了TSS中的内容。如果不做上述安排，当CPU加载TSS时就会加载到错误的数据。
 
-```cpp
-#ifndef OS_MODULES_H
-#define OS_MODULES_H
-
-...
-    
-// TSS
-TSS tss;
-
-#endif
-```
+我们在`src/kernel/setup.cpp`中定义这个TSS的实例，然后在`include/os_modules.h`中声明之，如下所示。
 
 TSS 和其他段一样，本质上是一片存储数据的内存区域， Intel本来是想让操作系统使用这片内存区域保存任务的最新状态，因此它也像其他段那样，有对应的段描述符，称为TSS 描述符，如下所示。
 
@@ -622,6 +655,12 @@ void ProgramManager::initializeTSS()
 }
 ```
 
+其中，`STACK_SELECTOR`是特权级0下的栈段选择子，也就是在bootloader中放入SS的选择子。
+
+```cpp
+#define STACK_SELECTOR 0x10
+```
+
 接下来，我们便可以正式创建进程了。
 
 ## 进程的创建
@@ -637,7 +676,13 @@ struct PCB
 };
 ```
 
-然后我们开始创建进程。
+我们开始创建进程，进程的创建分为3步。
+
++ 创建进程的PCB。
++ 初始化进程的页目录表。
++ 初始化进程的虚拟地址池。
+
+代码如下，我们分别来分析。
 
 ```cpp
 int ProgramManager::executeProcess(const char *filename, int priority)
@@ -645,27 +690,34 @@ int ProgramManager::executeProcess(const char *filename, int priority)
     bool status = interruptManager.getInterruptStatus();
     interruptManager.disableInterrupt();
 
-    int pid = executeThread((ThreadFunction)load_process, (void *)filename, filename, priority);
+    // 在线程创建的基础上初步创建进程的PCB
+    int pid = executeThread((ThreadFunction)load_process,
+                            (void *)filename, filename, priority);
     if (pid == -1)
     {
         interruptManager.setInterruptStatus(status);
         return -1;
     }
 
-    PCB *process = ListItem2PCB(allPrograms.back());
+    // 找到刚刚创建的PCB
+    PCB *process = ListItem2PCB(allPrograms.back()， tagInAllList);
 
+    // 创建进程的页目录表
     process->pageDirectoryAddress = createProcessPageDirectory();
-    if (process->pageDirectoryAddress)
+    if (!process->pageDirectoryAddress)
     {
         process->status = ThreadStatus::DEAD;
+        interruptManager.setInterruptStatus(status);
         return -1;
     }
 
+    // 创建进程的虚拟地址池
     bool res = createUserVirtualPool(process);
 
     if (!res)
     {
         process->status = ThreadStatus::DEAD;
+        interruptManager.setInterruptStatus(status);
         return -1;
     }
 
@@ -673,16 +725,18 @@ int ProgramManager::executeProcess(const char *filename, int priority)
 
     return pid;
 }
-
 ```
 
-这里我们先像创建一个线程一样创建进程的PCB，这里，创建线程的参数并不是进程的起始地址，而是加载进程的函数，这个我们后面再分析。如果进程创建失败，我们只要简单地将其标记为`DEAD`即可。
+第7-13行，我们像创建一个线程一样创建进程的PCB。这里，创建线程的参数并不是进程的起始地址，而是加载进程的函数，这个我们后面再分析。如果进程创建失败，我们只要简单地将其标记为`DEAD`即可。
 
-接着我们为进程创建页目录表，如下所示。
+第16行，我们找到刚刚创建的PCB。根据`executeThread`的实现，一个新创建的PCB总是被放在`allPrograms`的末尾的。但是，这样做是存在风险的，我们应该通过pid来找到刚刚创建的PCB。
+
+第19-25行，我们为进程创建页目录表。页目录表的创建和初始化通过`ProgramManager::createProcessPageDirectory`来实现，如下所示。
 
 ```cpp
 int ProgramManager::createProcessPageDirectory()
 {
+    // 从内核地址池中分配一页存储用户进程的页目录表
     int vaddr = memoryManager.allocatePages(AddressPoolType::KERNEL, 1);
     if (!vaddr)
     {
@@ -700,15 +754,22 @@ int ProgramManager::createProcessPageDirectory()
         dst[i] = src[i];
     }
 
-    // 最后一项设置为用户进程页目录表物理地址
+    // 用户进程页目录表的最后一项指向用户进程页目录表本身
     ((int *)vaddr)[1023] = memoryManager.vaddr2paddr(vaddr) | 0x7;
+    
     return vaddr;
 }
 ```
 
-首先，进程的页目录表是从内核中分配的，而分配的页的虚拟地址已经被提升到3GB以上的空间。为了使进程能够访问这份部分地址，我们需要将内核的第768\~1022个页目录项复制到进程的页目录表的相同位置。然后我们将最后一个页目录项指向用户进程页目录表物理地址，这是为了后面的内容服务，我们留到下卷再讨论:smile:
+第4-9行，我们从内核中分配一页来存储进程的页目录表。
 
-最后，我们为进程创建虚拟地址池，如下所示。
+第11-19行，从内核中分配的页的虚拟地址已经被提升到3GB以上的空间。为了使进程能够访问内核资源，根据之前的约定，我们令用户虚拟地址的3GB-4GB的空间指向内核空间。为此，我们需要将内核的第768\~1022个页目录项复制到进程的页目录表的相同位置。值得注意的是，我们需要构造出页目录表的第768\~1022个页目录项分别在内核页目录表和用户进程中的虚拟地址。
+
+第22行，我们将最后一个页目录项指向用户进程页目录表物理地址，这是为了我们在切换到用户进程后，我们也能够构造出页目录项和页表项的虚拟地址。
+
+现在，我们继续分析`ProgramManager::executeProcess`。
+
+第28-35行，我们为进程创建虚拟地址池，如下所示。
 
 ```cpp
 bool ProgramManager::createUserVirtualPool(PCB *process)
@@ -733,11 +794,25 @@ bool ProgramManager::createUserVirtualPool(PCB *process)
 }
 ```
 
-这里，我们将进程的虚拟地址的起始位置定义在`USER_VADDR_START`到3GB，这是仿照linux的做法。然后我们计算这部分地址所占的页表的数量，从而计算出为了管理这部分地址所需的位图大小。然后，我们在内核空间中为进程分配位图所需的内存。
+这里，我们将用户进程的可分配的虚拟地址的定义在`USER_VADDR_START`和3GB之间，这是仿照linux的做法。
+
+```cpp
+#define USER_VADDR_START 0x8048000
+```
+
+第3-7行，我们计算这部分地址所占的页表的数量，从而计算出为了管理这部分地址所需的位图大小。
+
+第9行，我们在内核空间中为进程分配位图所需的内存。
+
+第16-17行，我们初始化用户虚拟地址池。
 
 至此，进程的创建已经完成，我们现在来看`load_process`的作用。
 
-进程就是程序的执行体。程序是放置在磁盘上的，当我们需要运行程序时，就需要为程序加载到内存，创建PCB和页目录表，然后被调度执行。但是，我们还没有实现文件系统，因此我们只是简单地给出进程要跳转执行的地址、创建PCB和页目录表。因此，和线程一样，filename是某个函数的地址。但同学们应该注意到，这二者实际上是等价的。
+进程就是程序的执行体。程序是放置在磁盘上的，当我们需要运行程序时，就需要将程序加载到内存，创建PCB和页目录表，然后调度进程执行。
+
+但是，我们还没有实现文件系统，因此我们只是简单地给出进程要跳转执行的地址、创建PCB和页目录表。因此，和线程一样，filename只是某个函数的地址。但同学们应该注意到，这二者实际上是等价的。
+
+# TODO 通过中断启动进程的想法
 
 当进程的PCB被首次加载到处理器执行时，CPU首先会进入`load_process`，`load_process`如下所示。
 
@@ -902,17 +977,11 @@ void ProgramManager::activateProgramPage(PCB *program)
 
     if (program->pageDirectoryAddress)
     {
-        updateESP0(program);
+        tss.esp0 = (int)program + PAGE_SIZE;
         paddr = memoryManager.vaddr2paddr(program->pageDirectoryAddress);
     }
 
     asm_update_cr3(paddr);
-}
-
-void ProgramManager::updateESP0(PCB *process)
-{
-    // 0特权级栈在PCB中
-    tss.esp0 = (int)process + PAGE_SIZE;
 }
 ```
 
