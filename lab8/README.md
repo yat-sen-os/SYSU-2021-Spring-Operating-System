@@ -2,8 +2,6 @@
 
 > 仰之弥高，钻之弥坚，瞻之在前，忽焉在后。
 
-[toc]
-
 # 实验概述
 
 在本节中，同学们将会学习到如下知识。
@@ -87,7 +85,11 @@ asm_system_call:
     push ebp
     mov ebp, esp
 
-    pushad
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
     push ds
     push es
     push fs
@@ -101,31 +103,26 @@ asm_system_call:
     mov edi, [ebp + 7 * 4]
 
     int 0x80
-    mov [ASM_TEMP], eax
 
     pop gs
     pop fs
     pop es
     pop ds
-    popad
-
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
     pop ebp
 
-    mov eax, [ASM_TEMP]
     ret
 ```
 
-第2-16行，在调用中断前，我们先保护现场，将系统调用的参数放到5个寄存器ebx, ecx, edx, esi, edi中，将系统调用号放到eax中。
+第5-20行，在调用中断前，我们先保护现场，将系统调用的参数放到5个寄存器ebx, ecx, edx, esi, edi中，将系统调用号放到eax中。
 
-第18行，我们将系统调用的中断向量号定义为`0x80`。保护现场后，使用指令`int 0x80`调用`0x80`中断。`0x80`中断会根据保存在eax的系统调用号来调用不同的函数。
+第22行，我们将系统调用的中断向量号定义为`0x80`。保护现场后，使用指令`int 0x80`调用`0x80`中断。`0x80`中断会根据保存在eax的系统调用号来调用不同的函数。
 
-第29行，中断返回后，根据C语言函数调用规则，函数的返回值是放在eax中的，由于后面的`popad`指令会影响eax，因此我们先将eax保存在`dd`类型的变量`ASM_TEMP`中，如下所示。
-
-```asm
-ASM_TEMP dd 0
-```
-
-恢复现场后再恢复eax，最后返回即可。
+第24-33行，恢复现场。
 
 然后，我们创建一个管理系统调用的类`SystemService`，如下所示，代码放在`syscall.h`中。
 
@@ -187,19 +184,17 @@ void SystemService::initialize()
 }
 ```
 
-我们已经知道，每一个系统调用号都有一个处理这个系统调用的函数，实际上就是操作系统向用户程序提供的服务的约定。这些系统调用的函数被统一放在系统调用表中，如下所示。
+第3行，我们已经知道，每一个系统调用号都有一个处理这个系统调用的函数，实际上就是操作系统向用户程序提供的服务的约定。这些系统调用的函数被统一放在系统调用表中，如下所示。
 
 ```cpp
 int system_call_table[MAX_SYSTEM_CALL];
 ```
 
-`system_call_table`的每一个元素是系统调用的处理函数的地址。
+`system_call_table`的每一个元素是系统调用的处理函数的地址。`MAX_SYSTEM_CALL`是内核提供的系统调用数量，我们设置为256。
 
-我们希望通过0x80中断从特权级3(用户态)到特权级0(内核态)转移，中断描述符中的代码段选择子的RPL=0，注意到`InterruptManager::setInterruptDescriptor`默认中断描述符的代码段选择子是DPL=0的平坦模式代码段选择子，因此我们直接调用这个函数设置中断描述符即可。注意，我们需要设置中断描述符的DPL=3，否则会由于特权级保护导致用户程序无法使用这个中断。
+第5行，我们希望通过0x80中断从特权级3(用户态)到特权级0(内核态)转移，因此中断描述符中的代码段选择子的RPL=0。注意到`InterruptManager::setInterruptDescriptor`默认中断描述符的代码段选择子是DPL=0的平坦模式代码段选择子，因此我们直接调用这个函数设置中断描述符即可。注意，我们需要设置中断描述符的DPL=3，否则会由于特权级保护导致用户程序无法使用这个中断。
 
 `asm_system_call_handler`是0x80号中断的处理函数，如下所示。
-
-# 开关中断是否有必要？
 
 ```asm
 ; int asm_systerm_call_handler();
@@ -243,7 +238,19 @@ asm_system_call_handler:
 
 第27-29行，修改esp寄存器，执行中断返回即可。
 
-我们加入第一个系统调用，系统调用号为0的系统调用，如下所示。
+然后，我们加入设置系统调用的函数。
+
+```cpp
+bool SystemService::setSystemCall(int index, int function)
+{
+    system_call_table[index] = function;
+    return true;
+}
+```
+
+其中，`function`是第`index`个系统调用的处理函数的地址。
+
+我们在`src/kernel/setup.cpp`中加入第一个系统调用，系统调用号为0的系统调用，如下所示。
 
 ```cpp
 int syscall_0(int first, int second, int third, int forth, int fifth)
@@ -254,7 +261,7 @@ int syscall_0(int first, int second, int third, int forth, int fifth)
 }
 ```
 
-在`setup_kernel.cpp`中设置系统调用号为0的系统调用处理函数，然后调用之，如下所示。
+设置系统调用号为0的系统调用处理函数，然后调用之，如下所示。
 
 ```cpp
 extern "C" void setup_kernel()
@@ -292,7 +299,7 @@ extern "C" void setup_kernel()
 
 编译运行，输出如下结果。
 
-<img src="gallery/第一个系统调用.PNG" alt="第一个系统调用" style="zoom:38%;" />
+<img src="gallery/第一个系统调用.png" alt="第一个系统调用" style="zoom:70%;" />
 
 此时，我们便实现了系统调用，接下来我们创建进程。
 
