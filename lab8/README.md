@@ -461,7 +461,7 @@ make clean && make && make run
 
 结果如下。
 
-<img src="/home/nelson/oslab/lab8/gallery/进程创建前的准备.png" alt="进程创建前的准备" style="zoom:67%;" />
+<img src="gallery/进程创建前的准备.png" alt="进程创建前的准备" style="zoom:67%;" />
 
 此时我们就完成了进程创建前的准备。接下来，我们来初始化TSS。
 
@@ -812,7 +812,54 @@ bool ProgramManager::createUserVirtualPool(PCB *process)
 
 但是，我们还没有实现文件系统，因此我们只是简单地给出进程要跳转执行的地址、创建PCB和页目录表。因此，和线程一样，filename只是某个函数的地址。但同学们应该注意到，这二者实际上是等价的。
 
-# TODO 通过中断启动进程的想法
+在实现用户进程之前，我们运行在特权级0下。当我们调度用户进程上处理机时，用户进程运行在特权级3下，我们必然需要从高特权级向低特权级转移。前面我们提到，通常情况下，CPU不允许我们从高特权级向低特权级转移。实现高特权级向低特权级转移的唯一办法就是通过中断返回。我们通过`iret`指令强制将低特权级下的段选择子和栈送入段寄存器，以实现启动用户进程。因此，在启动进程之前，我们需要将进程需要的段选择子等信息放入栈中。
+
+为了方便表示，我们首先在`include/process.h`定义一个类`ProgramStartStack`来表示启动进程之前栈放入的内容。
+
+```cpp
+#ifndef PROCESS_H
+#define PROCESS_H
+
+struct ProcessStartStack
+{
+    int edi;
+    int esi;
+    int ebp;
+    int esp_dummy;
+    int ebx;
+    int edx;
+    int ecx;
+    int eax;
+    
+    int gs;
+    int fs;
+    int es;
+    int ds;
+
+    int eip;
+    int cs;
+    int eflags;
+    int esp;
+    int ss;
+};
+
+#endif
+```
+
+`ProcessStartStack`内容的安排和我们后面使用`iret`来启动进程是密不可分的，然后我们初始化`ProcessStartStack`。
+
+然后，我们修改`executeThread`，在PCB的顶部预留出`ProcessStartStack`的空间。
+
+```cpp
+int ProgramManager::executeThread(ThreadFunction function, void *parameter, const char *name, int priority)
+{
+...
+    // 线程栈
+    thread->stack = (int *)((int)thread + PAGE_SIZE - sizeof(ProcessStartStack));
+    
+...
+}
+```
 
 当进程的PCB被首次加载到处理器执行时，CPU首先会进入`load_process`，`load_process`如下所示。
 
@@ -856,49 +903,11 @@ void load_process(const char *filename)
 }
 ```
 
-首先我们关中断，然后初始化启动进程需要的栈结构。注意，我们在创建PCB的时候预留了这部分内存，如下所示。
+第3-26行，关中断，然后初始化启动进程需要的栈结构。
 
-```cpp
-int ProgramManager::executeThread(ThreadFunction function, void *parameter, const char *name, int priority)
-{
-...
-    // 线程栈
-    thread->stack = (int *)((int)thread + PAGE_SIZE - sizeof(ProcessStartStack));
-    
-...
-}
-```
+第26行，进程是运行在特权级3下的，每一个特权级都有自己的栈。因此，我们在进程虚拟地址空间中分配一页来作为进程的特权级3栈。我们后面可以看到，进程的特权级0栈在进程的PCB中。
 
-这个栈结构如下。
-
-```cpp
-struct ProcessStartStack
-{
-    int edi;
-    int esi;
-    int ebp;
-    int esp_dummy;
-    int ebx;
-    int edx;
-    int ecx;
-    int eax;
-    
-    int gs;
-    int fs;
-    int es;
-    int ds;
-
-    int eip;
-    int cs;
-    int eflags;
-    int esp;
-    int ss;
-};
-```
-
-`ProcessStartStack`内容的安排和我们后面使用中断返回来启动进程是密不可分的，然后我们初始化`ProcessStartStack`。
-
-注意，进程是运行在特权级3下的，每一个特权级都有自己的栈。因此在最后，我们在进程虚拟地址空间中分配一页来作为进程的特权级3栈。我们后面可以看到，进程的特权级0栈在进程的PCB中。在此之前，我们需要页内存分配的函数稍作修改，使得我们可以分配和释放用户空间的页内存。
+在用户进程中，我们需要进程内存分配和释放。这部分内存是来源于用户虚拟空间和用户物理空间的。因此，我们需要对页内存分配和释放的函数稍作修改，使得我们可以分配和释放用户空间的页内存。
 
 ```cpp
 int MemoryManager::allocateVirtualPages(enum AddressPoolType type, const int count)
@@ -928,11 +937,12 @@ void MemoryManager::releaseVirtualPages(enum AddressPoolType type, const int vad
 }
 ```
 
-然后我们定义进程启动时的`eflags`结构，我们将IOPL设置为0，意味着进程无法直接访问IO端口，由此实现用户态程序无法自由地访问硬件。
+第24行，我们定义进程启动时的`eflags`结构，我们将IOPL设置为0，意味着进程无法直接访问IO端口，由此实现用户态程序无法自由地访问硬件。
 
-最后，我们通过中断返回来启动进程，如下所示。
+第36行，我们通过中断返回来启动进程，如下所示。
 
 ```asm
+; void asm_start_process(int stack);
 asm_start_process:
     ;jmp $
     mov eax, dword[esp+4]
@@ -946,7 +956,7 @@ asm_start_process:
     iret
 ```
 
-我们将`ProcessStartStack`的起始地址送入了esp，然后通过一系列的pop指令和iret语句更新寄存器，最后中断返回后，特权级3的选择子被段寄存器中，然后跳转到进程的起始代码处执行。
+我们将`ProcessStartStack`的起始地址送入了esp，然后通过一系列的pop指令和iret语句更新寄存器，最后中断返回后，特权级3的选择子被放入到段寄存器中，代码跳转到进程的起始处执行。
 
 至此，我们便完成了进程的启动，实现了从内核态到用户态的变化。
 
@@ -985,13 +995,11 @@ void ProgramManager::activateProgramPage(PCB *program)
 }
 ```
 
-比较简单，我便不再赘述。
-
-至此，我们已经实现了用户进程，我们接下来使用之。
+比较简单，本教程便不再赘述。至此，我们已经实现了用户进程。接下来，我们创建进程。
 
 > 特别注意，我们还没有实现进程的返回，因此我们需要在进程的结束处加入死循环来阻止进程返回。
 
-# Assignment 2 第一个进程
+# 第一个进程
 
 我们创建第一个进程，这个进程会调用之前的系统调用0，如下所示。
 
@@ -1013,6 +1021,7 @@ void first_thread(void *arg)
 
 extern "C" void setup_kernel()
 {
+
     // 中断管理器
     interruptManager.initialize();
     interruptManager.enableTimeInterrupt();
@@ -1021,17 +1030,16 @@ extern "C" void setup_kernel()
     // 输出管理器
     stdio.initialize();
 
-    // 内存管理器
-    //memoryManager.openPageMechanism();
-    memoryManager.initialize(32 * 1024 * 1024);
-
     // 进程/线程管理器
     programManager.initialize();
 
+    // 内存管理器
+    memoryManager.initialize();
+
     // 初始化系统调用
     systemService.initialize();
+    // 设置0号系统调用
     systemService.setSystemCall(0, (int)syscall_0);
-    systemService.setSystemCall(1, (int)syscall_write);
 
     // 创建第一个线程
     int pid = programManager.executeThread(first_thread, nullptr, "first thread", 1);
@@ -1042,7 +1050,7 @@ extern "C" void setup_kernel()
     }
 
     ListItem *item = programManager.readyPrograms.front();
-    PCB *firstThread = programManager.ListItem2PCB(item);
+    PCB *firstThread = ListItem2PCB(item,tagInGeneralList);
     firstThread->status = RUNNING;
     programManager.readyPrograms.pop_front();
     programManager.running = firstThread;
@@ -1055,7 +1063,7 @@ extern "C" void setup_kernel()
 
 然后编译运行，输出如下信息。
 
-<img src="gallery/第一个进程.PNG" alt="第一个进程" style="zoom:38%;" />
+<img src="gallery/进程的实现.png" alt="进程创建前的准备" style="zoom:67%;" />
 
 至此，我们成功地实现了用户进程。
 
@@ -1089,6 +1097,7 @@ int printf(const char *const fmt, ...)
 3. 请复现assignment 1。
 4. 请复现assignment 2。
 5. 请实现assignment 3。
+6. ProcessStartStack的作用。观察我们是如何通过中断返回的方式来实现进程。
 
 # bonus
 
