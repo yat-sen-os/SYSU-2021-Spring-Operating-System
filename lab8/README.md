@@ -1,6 +1,6 @@
-# 第6章 从内核态到用户态
+# 从内核态到用户态
 
-> 仰之弥高，钻之弥坚，瞻之在前，忽焉在后。
+> 
 
 # 实验概述
 
@@ -16,9 +16,7 @@
 
 + 《操作系统真象还原》
 
-# 实验要求
-
-
+# TODO 实验要求
 
 # 浅谈特权级
 
@@ -1068,43 +1066,3 @@ extern "C" void setup_kernel()
 <img src="gallery/进程的实现.png" alt="进程创建前的准备" style="zoom:67%;" />
 
 至此，我们成功地实现了用户进程。
-
-# Assignment 3 printf的改造
-
-由于我们设置了进程的IOPL=0，进程无法在用户态下直接访问显存地址来进程输入输出，即在进程中，如果我们调用`printf`，那么`printf`中形如`stdio.print`的语句无法被执行。
-
-```cpp
-int printf(const char *const fmt, ...)
-{
-    ...
-
-            case 's':
-                buffer[idx] = '\0';
-                idx = 0;
-                counter += stdio.print(buffer);
-                counter += stdio.print(va_arg(ap, const char *));
-                break;
-    ...
-}
-```
-
-为了能在进程中使用printf，同学们需要加入一个向屏幕输出的系统调用，然后将将直接访问显存的输出换成使用这个系统调用来输出。
-
-# 练习
-
-1. 系统调用的参数是否一定要放在栈上？是否可以使用栈来传递？
-2. `load_process`开始关中断，但并没有开中断。请问后面启动进程后，为什么CPU可以响应时钟中断？
-3. 请复现assignment 1。
-4. 请复现assignment 2。
-5. 请实现assignment 3。
-6. ProcessStartStack的作用。观察我们是如何通过中断返回的方式来实现进程。
-7. 增加系统调用。
-
-# bonus
-
-1. 实现信号量和锁机制。
-2. 实现CPU原生的多任务切换。
-3. 实现fork/exit/wait。
-4. 实现一个文件系统。
-5. 实现一个简易的shell。
-6. 实现一个小游戏。
