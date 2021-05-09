@@ -14,6 +14,8 @@
 
 # 参考资料
 
++ 《操作系统真象还原》
+
 # 实验要求
 
 
@@ -1069,7 +1071,7 @@ extern "C" void setup_kernel()
 
 # Assignment 3 printf的改造
 
-由于我们设置了进程的IOPL=0，进程无法在用户态下直接访问显存地址来进程输入输出，即在进程中，`printf`的形如`stdio.print`的语句无法被执行。
+由于我们设置了进程的IOPL=0，进程无法在用户态下直接访问显存地址来进程输入输出，即在进程中，如果我们调用`printf`，那么`printf`中形如`stdio.print`的语句无法被执行。
 
 ```cpp
 int printf(const char *const fmt, ...)
@@ -1088,8 +1090,6 @@ int printf(const char *const fmt, ...)
 
 为了能在进程中使用printf，同学们需要加入一个向屏幕输出的系统调用，然后将将直接访问显存的输出换成使用这个系统调用来输出。
 
-> 本章字数最少，但综合了前面5章的全部知识，同学们注意仔细体会:sweat_smile:
-
 # 练习
 
 1. 系统调用的参数是否一定要放在栈上？是否可以使用栈来传递？
@@ -1098,6 +1098,7 @@ int printf(const char *const fmt, ...)
 4. 请复现assignment 2。
 5. 请实现assignment 3。
 6. ProcessStartStack的作用。观察我们是如何通过中断返回的方式来实现进程。
+7. 增加系统调用。
 
 # bonus
 
