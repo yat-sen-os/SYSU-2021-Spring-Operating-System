@@ -373,6 +373,104 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
 {
     int pid = child->pid;
     memcpy(parent, child, PAGE_SIZE);
+    child->pid = pid;
+    child->parentPid = parent->pid;
 
-    
+    ProgramStartStack *pss = (ProgramStartStack *)((int)child + PAGE_SIZE - sizeof(ProgramStartStack));
+    pss->eax = 0;
+
+    child->stack = (int *)pss - 7;
+    child->stack[0] = 0;
+    child->stack[1] = 0;
+    child->stack[2] = 0;
+    child->stack[3] = 0;
+    child->stack[4] = (int)asm_start_process;
+    child->stack[5] = 0;
+    child->stack[6] = (int)pss;
+
+    child->status = ProgramStatus::READY;
+
+    child->pageDirectoryAddress = createProcessPageDirectory();
+    if (!child->pageDirectoryAddress)
+    {
+        child->status = ProgramStatus::DEAD;
+        return false;
+    }
+
+    memcpy(parent->pageDirectoryAddress, child->pageDirectoryAddress, 768 * 4);
+
+    bool res = createUserVirtualPool(child);
+    if (!res)
+    {
+        child->status = ProgramStatus::DEAD;
+        return false;
+    }
+
+    int bitmapLength = parent->userVirtual.resources.length;
+    int bitmapBytes = ceil(bitmapLength, 8);
+    memcpy(parent->userVirtual.resources.bitmap, child->userVirtual.resources.bitmap, bitmapBytes);
+
+    char *buffer = (char *)memoryManager.allocatePages(AddressPoolType::KERNEL, 1);
+    if (!buffer)
+    {
+        child->status = ProgramStatus::DEAD;
+        return false;
+    }
+
+    int childPageDirPaddr = memoryManager.vaddr2paddr(child->pageDirectoryAddress);
+    int parentPageDirPaddr = memoryManager.vaddr2paddr(parent->pageDirectoryAddress);
+    int *childPageDir = (int *)child->pageDirectoryAddress;
+    int *parentPageDir = (int *)parent->pageDirectoryAddress;
+
+    for (int i = 0; i < 768; ++i)
+    {
+        // 页表存在
+        if (parentPageDir[i] & 0x1)
+        {
+            // 复制页目录项对应的页表到子进程
+
+            // 计算页表的虚拟地址
+            int *pageTableVaddr = (int *)(0xffc00000 + (i << 12));
+
+            memcpy(pageTableVaddr, buffer, PAGE_SIZE);
+            int paddr = memoryManager.allocatePhysicalPages(AddressPoolType::USER, 1);
+            if (!paddr)
+            {
+                child->status = ProgramStatus::DEAD;
+                return false;
+            }
+
+            asm_update_cr3(childPageDirPaddr); // 下面根据的就是子进程的页目录表进行寻址
+            childPageDir[i] = (childPageDir[i] & 0x00000fff) | paddr;
+            memcpy(buffer, pageTableVaddr, PAGE_SIZE);
+            asm_update_cr3(parentPageDirPaddr);
+
+            void *pageVaddr;
+
+            // 复制物理页
+            for (int j = 0; j < 1024; ++j)
+            {
+                if (pageTableVaddr[j] & 0x1)
+                {
+                    paddr = memoryManager.allocatePhysicalPages(AddressPoolType::USER, 1);
+                    if (!paddr)
+                    {
+                        child->status = ProgramStatus::DEAD;
+                        return false;
+                    }
+                    pageVaddr = (void *)((i << 22) + (j << 12));
+                    memcpy(pageVaddr, buffer, PAGE_SIZE);
+
+                    asm_update_cr3(childPageDirPaddr);
+                    pageTableVaddr[j] = (pageTableVaddr[j] & 0x00000fff) | paddr;
+                    memcpy(buffer, pageVaddr, PAGE_SIZE);
+                    asm_update_cr3(parentPageDirPaddr);
+                }
+            }
+        }
+    }
+
+    // 归还从内核分配的页表
+    memoryManager.releasePages(AddressPoolType::KERNEL, (int)buffer, 1);
+    return true;
 }

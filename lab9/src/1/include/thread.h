@@ -30,6 +30,7 @@ struct PCB
 
     int pageDirectoryAddress; // 页目录表地址
     AddressPool userVirtual;  // 用户程序虚拟地址池
+    int parentPid;            // 父进程pid
 };
 
 #endif
