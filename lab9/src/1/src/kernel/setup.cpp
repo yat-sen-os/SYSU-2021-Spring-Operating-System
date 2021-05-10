@@ -30,8 +30,14 @@ int syscall_0(int first, int second, int third, int forth, int fifth)
 
 void first_process()
 {
-    printf("Hello Process: ");
-    asm_system_call(0, 132, 324, 12, 124);
+    int pid = fork();
+
+    if(pid) {
+        printf("I am father, child pid: %d\n", pid);
+    } else {
+        printf("I am child, my pid: %d\n", programManager.running->pid);
+    }
+
     asm_halt();
 }
 
@@ -39,8 +45,6 @@ void first_thread(void *arg)
 {
     
     printf("start process\n");
-    programManager.executeProcess((const char *)first_process, 1);
-    programManager.executeProcess((const char *)first_process, 1);
     programManager.executeProcess((const char *)first_process, 1);
     asm_halt();
 }

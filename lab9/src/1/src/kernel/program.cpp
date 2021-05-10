@@ -123,6 +123,8 @@ void ProgramManager::schedule()
     running = next;
     readyPrograms.pop_front();
 
+    //printf("schedule: %x %x\n", cur, next);
+
     activateProgramPage(next);
 
     asm_switch_thread(cur, next);
@@ -215,6 +217,8 @@ int ProgramManager::executeProcess(const char *filename, int priority)
 
     // 创建进程的页目录表
     process->pageDirectoryAddress = createProcessPageDirectory();
+    //printf("%x\n", process->pageDirectoryAddress);
+
     if (!process->pageDirectoryAddress)
     {
         process->status = ProgramStatus::DEAD;
@@ -358,6 +362,7 @@ int ProgramManager::fork()
 
     PCB *child = ListItem2PCB(this->allPrograms.back(), tagInAllList);
     bool flag = copyProcess(parent, child);
+
     if (!flag)
     {
         child->status = ProgramStatus::DEAD;
@@ -372,24 +377,26 @@ int ProgramManager::fork()
 bool ProgramManager::copyProcess(PCB *parent, PCB *child)
 {
     // 复制PCB
-    int pid = child->pid;
-    memcpy(parent, child, PAGE_SIZE);
-    child->pid = pid;
-    child->parentPid = parent->pid;
+    ProcessStartStack *childpps = (ProcessStartStack *)((int)child + PAGE_SIZE - sizeof(ProcessStartStack));
+    ProcessStartStack *parentpps = (ProcessStartStack *)((int)parent + PAGE_SIZE - sizeof(ProcessStartStack));
+    memcpy(parentpps, childpps, sizeof(ProcessStartStack));
+    childpps->eax = 0;
 
-    ProgramStartStack *pss = (ProgramStartStack *)((int)child + PAGE_SIZE - sizeof(ProgramStartStack));
-    pss->eax = 0;
-
-    child->stack = (int *)pss - 7;
+    child->stack = (int *)childpps - 7;
     child->stack[0] = 0;
     child->stack[1] = 0;
     child->stack[2] = 0;
     child->stack[3] = 0;
     child->stack[4] = (int)asm_start_process;
-    child->stack[5] = 0;
-    child->stack[6] = (int)pss;
+    child->stack[5] = 0;        // asm_start_process 返回地址
+    child->stack[6] = (int)childpps; // asm_start_process 参数
 
     child->status = ProgramStatus::READY;
+    child->parentPid = parent->pid;
+    child->priority = parent->priority;
+    child->ticks = parent->ticks;
+    child->ticksPassedBy = parent->ticksPassedBy;
+    strcpy(parent->name, child->name);
 
     // 复制用户虚拟地址池
     int bitmapLength = parent->userVirtual.resources.length;
@@ -412,7 +419,10 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
     // 父进程页目录表指针(虚拟地址)
     int *parentPageDir = (int *)parent->pageDirectoryAddress;
 
+    //printf("%x %x\n", parent->pageDirectoryAddress, child->pageDirectoryAddress);
+
     memset((void *)child->pageDirectoryAddress, 0, 768 * 4);
+
     for (int i = 0; i < 768; ++i)
     {
         // 无对应页表

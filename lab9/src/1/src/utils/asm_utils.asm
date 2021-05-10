@@ -115,6 +115,7 @@ asm_system_call_handler:
     cli
 
     add esp, 5 * 4
+    
     popad
     pop gs
     pop fs

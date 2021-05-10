@@ -65,3 +65,12 @@ void memcpy(void *src, void *dst, uint32 length)
         ((char *)dst)[i] = ((char *)src)[i];
     }
 }
+
+void strcpy(const char *src, char *dst) {
+    int i = 0;
+    while(src[i]) {
+        dst[i] = src[i];
+        ++i;
+    }
+    dst[i] = '\0';
+}
