@@ -1266,7 +1266,7 @@ void MemoryManager::releasePages(enum AddressPoolType type, const int virtualAdd
 }
 ```
 
-页内存的释放是页内存分配的过程，分2个步骤完成。
+页内存的释放是页内存分配的过程，分两个步骤完成。
 
 + 对每一个虚拟页，释放为其分配的物理页。
 + 释放虚拟页。
@@ -1304,7 +1304,3 @@ void MemoryManager::releaseVirtualPages(enum AddressPoolType type, const int vad
 我们现在还没实现用户进程，而每一个用户进程都有自己独立的虚拟地址池，因此这里我们只处理内核虚拟地址池中的地址，等到我们实现了用户进程后再修改这部分的代码。
 
 至此，页内存分配的实现已经完成，同学们可以自行测试。
-
-# 习题
-
-修改线程的PCB
