@@ -349,7 +349,7 @@ int ProgramManager::fork()
         return -1;
     }
 
-    int pid = executeThread((ThreadFunction)0, nullptr, "", 0);
+    int pid = executeProcess("", 0);
     if (pid == -1)
     {
         interruptManager.setInterruptStatus(status);
@@ -371,6 +371,7 @@ int ProgramManager::fork()
 
 bool ProgramManager::copyProcess(PCB *parent, PCB *child)
 {
+    // 复制PCB
     int pid = child->pid;
     memcpy(parent, child, PAGE_SIZE);
     child->pid = pid;
@@ -390,22 +391,7 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
 
     child->status = ProgramStatus::READY;
 
-    child->pageDirectoryAddress = createProcessPageDirectory();
-    if (!child->pageDirectoryAddress)
-    {
-        child->status = ProgramStatus::DEAD;
-        return false;
-    }
-
-    memcpy(parent->pageDirectoryAddress, child->pageDirectoryAddress, 768 * 4);
-
-    bool res = createUserVirtualPool(child);
-    if (!res)
-    {
-        child->status = ProgramStatus::DEAD;
-        return false;
-    }
-
+    // 复制用户虚拟地址池
     int bitmapLength = parent->userVirtual.resources.length;
     int bitmapBytes = ceil(bitmapLength, 8);
     memcpy(parent->userVirtual.resources.bitmap, child->userVirtual.resources.bitmap, bitmapBytes);
@@ -417,22 +403,65 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
         return false;
     }
 
+    // 子进程页目录表地址
     int childPageDirPaddr = memoryManager.vaddr2paddr(child->pageDirectoryAddress);
+    // 父进程页目录表地址
     int parentPageDirPaddr = memoryManager.vaddr2paddr(parent->pageDirectoryAddress);
+    // 子进程页目录表指针(虚拟地址)
     int *childPageDir = (int *)child->pageDirectoryAddress;
+    // 父进程页目录表指针(虚拟地址)
     int *parentPageDir = (int *)parent->pageDirectoryAddress;
+
+    memset((void *)child->pageDirectoryAddress, 0, 768 * 4);
+    for (int i = 0; i < 768; ++i)
+    {
+        // 无对应页表
+        if (!(parentPageDir[i] & 0x1))
+        {
+            continue;
+        }
+
+        // 从用户物理地址池中分配一页，作为子进程的页目录项指向的页表
+        int paddr = memoryManager.allocatePhysicalPages(AddressPoolType::USER, 1);
+        if (!paddr)
+        {
+            child->status = ProgramStatus::DEAD;
+            return false;
+        }
+        // 页目录项
+        int pde = parentPageDir[i];
+        // 构造页表的起始虚拟地址
+        int *pageTableVaddr = (int *)(0xffc00000 + (i << 12));
+
+        asm_update_cr3(childPageDirPaddr); // 进入子进程虚拟地址空间
+
+        childPageDir[i] = (pde & 0x00000fff) | paddr;
+        memset(pageTableVaddr, 0, PAGE_SIZE);
+
+        asm_update_cr3(parentPageDirPaddr); // 回到父进程虚拟地址空间
+    }
 
     for (int i = 0; i < 768; ++i)
     {
-        // 页表存在
-        if (parentPageDir[i] & 0x1)
+        // 无对应页表
+        if (!(parentPageDir[i] & 0x1))
         {
-            // 复制页目录项对应的页表到子进程
+            continue;
+        }
 
-            // 计算页表的虚拟地址
-            int *pageTableVaddr = (int *)(0xffc00000 + (i << 12));
+        // 计算页表的虚拟地址
+        int *pageTableVaddr = (int *)(0xffc00000 + (i << 12));
 
-            memcpy(pageTableVaddr, buffer, PAGE_SIZE);
+        // 复制物理页
+        for (int j = 0; j < 1024; ++j)
+        {
+            // 无对应物理页
+            if (!(pageTableVaddr[j] & 0x1))
+            {
+                continue;
+            }
+
+            // 从用户物理地址池中分配一页，作为子进程的页表项指向的物理页
             int paddr = memoryManager.allocatePhysicalPages(AddressPoolType::USER, 1);
             if (!paddr)
             {
@@ -440,33 +469,18 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
                 return false;
             }
 
-            asm_update_cr3(childPageDirPaddr); // 下面根据的就是子进程的页目录表进行寻址
-            childPageDir[i] = (childPageDir[i] & 0x00000fff) | paddr;
-            memcpy(buffer, pageTableVaddr, PAGE_SIZE);
-            asm_update_cr3(parentPageDirPaddr);
+            // 构造物理页的起始虚拟地址
+            void *pageVaddr = (void *)((i << 22) + (j << 12));
+            memcpy(pageVaddr, buffer, PAGE_SIZE);
+            // 页表项
+            int pte = pageTableVaddr[j];
 
-            void *pageVaddr;
+            asm_update_cr3(childPageDirPaddr); // 进入子进程虚拟地址空间
 
-            // 复制物理页
-            for (int j = 0; j < 1024; ++j)
-            {
-                if (pageTableVaddr[j] & 0x1)
-                {
-                    paddr = memoryManager.allocatePhysicalPages(AddressPoolType::USER, 1);
-                    if (!paddr)
-                    {
-                        child->status = ProgramStatus::DEAD;
-                        return false;
-                    }
-                    pageVaddr = (void *)((i << 22) + (j << 12));
-                    memcpy(pageVaddr, buffer, PAGE_SIZE);
+            pageTableVaddr[j] = (pte & 0x00000fff) | paddr;
+            memcpy(buffer, pageVaddr, PAGE_SIZE);
 
-                    asm_update_cr3(childPageDirPaddr);
-                    pageTableVaddr[j] = (pageTableVaddr[j] & 0x00000fff) | paddr;
-                    memcpy(buffer, pageVaddr, PAGE_SIZE);
-                    asm_update_cr3(parentPageDirPaddr);
-                }
-            }
+            asm_update_cr3(parentPageDirPaddr); // 回到父进程虚拟地址空间
         }
     }
 

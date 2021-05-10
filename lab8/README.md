@@ -16,7 +16,10 @@
 
 + 《操作系统真象还原》
 
-# TODO 实验要求
+# TODO 
+
++ 实验要求
++ c\_time\_inter/systemcall handler的修改
 
 # 浅谈特权级
 
