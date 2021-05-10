@@ -31,3 +31,11 @@ int write(const char *str) {
 int syscall_write(const char *str) {
     return stdio.print(str);
 }
+
+int fork() {
+    return asm_system_call(2, (int)syscall_fork);
+}
+
+int syscall_fork() {
+    return programManager.fork();
+}

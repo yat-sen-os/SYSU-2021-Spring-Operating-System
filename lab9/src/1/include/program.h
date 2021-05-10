@@ -55,6 +55,12 @@ public:
 
     // 切换页目录表，实现虚拟地址空间的切换
     void activateProgramPage(PCB *program);
+
+    // 创建子进程
+    int fork();
+
+    // 复制进程
+    bool copyProcess(PCB *parent, PCB *child);
 };
 
 void program_exit();

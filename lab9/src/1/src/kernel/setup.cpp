@@ -65,7 +65,9 @@ extern "C" void setup_kernel()
     systemService.setSystemCall(0, (int)syscall_0);
     // 设置1号系统调用
     systemService.setSystemCall(1, (int)syscall_write);
-
+    // 设置2号系统调用
+    systemService.setSystemCall(2, (int)syscall_fork);
+    
     // 内存管理器
     memoryManager.initialize();
 

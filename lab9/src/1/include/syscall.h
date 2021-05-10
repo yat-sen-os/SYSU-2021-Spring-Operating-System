@@ -14,8 +14,13 @@ public:
 
 // 第0个系统调用
 int syscall_0(int first, int second, int third, int forth, int fifth);
-// 第1个系统调用
+
+// 第1个系统调用, write
 int write(const char *str);
 int syscall_write(const char *str);
+
+// 第2个系统调用, fork
+int fork();
+int syscall_fork();
 
 #endif

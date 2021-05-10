@@ -222,7 +222,6 @@ int ProgramManager::executeProcess(const char *filename, int priority)
         return -1;
     }
 
-    
     // 创建进程的虚拟地址池
     bool res = createUserVirtualPool(process);
 
@@ -269,7 +268,6 @@ bool ProgramManager::createUserVirtualPool(PCB *process)
     int sourcesCount = (0xc0000000 - USER_VADDR_START) / PAGE_SIZE;
     int bitmapLength = ceil(sourcesCount, 8);
 
-    
     // 计算位图所占的页数
     int pagesCount = ceil(bitmapLength, PAGE_SIZE);
 
@@ -336,4 +334,45 @@ void ProgramManager::activateProgramPage(PCB *program)
     }
 
     asm_update_cr3(paddr);
+}
+
+int ProgramManager::fork()
+{
+    bool status = interruptManager.getInterruptStatus();
+    interruptManager.disableInterrupt();
+
+    // 禁止内核线程调用
+    PCB *parent = this->running;
+    if (!parent->pageDirectoryAddress)
+    {
+        interruptManager.setInterruptStatus(status);
+        return -1;
+    }
+
+    int pid = executeThread((ThreadFunction)0, nullptr, "", 0);
+    if (pid == -1)
+    {
+        interruptManager.setInterruptStatus(status);
+        return -1;
+    }
+
+    PCB *child = ListItem2PCB(this->allPrograms.back(), tagInAllList);
+    bool flag = copyProcess(parent, child);
+    if (!flag)
+    {
+        child->status = ProgramStatus::DEAD;
+        interruptManager.setInterruptStatus(status);
+        return -1;
+    }
+
+    interruptManager.setInterruptStatus(status);
+    return pid;
+}
+
+bool ProgramManager::copyProcess(PCB *parent, PCB *child)
+{
+    int pid = child->pid;
+    memcpy(parent, child, PAGE_SIZE);
+
+    
 }

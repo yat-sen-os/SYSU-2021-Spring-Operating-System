@@ -84,6 +84,12 @@ asm_add_global_descriptor:
     ret
 ; int asm_systerm_call_handler();
 asm_system_call_handler:
+    push ds
+    push es
+    push fs
+    push gs
+    pushad
+
     push eax
 
     ; 栈段会从tss中自动加载
@@ -109,6 +115,11 @@ asm_system_call_handler:
     cli
 
     add esp, 5 * 4
+    popad
+    pop gs
+    pop fs
+    pop es
+    pop ds
 
     iret
 asm_system_call:
@@ -120,10 +131,6 @@ asm_system_call:
     push edx
     push esi
     push edi
-    push ds
-    push es
-    push fs
-    push gs
 
     mov eax, [ebp + 2 * 4]
     mov ebx, [ebp + 3 * 4]
@@ -134,10 +141,6 @@ asm_system_call:
 
     int 0x80
 
-    pop gs
-    pop fs
-    pop es
-    pop ds
     pop edi
     pop esi
     pop edx
@@ -221,7 +224,11 @@ asm_enable_interrupt:
     ret
 asm_time_interrupt_handler:
     pushad
-    
+    push ds
+    push es
+    push fs
+    push gs
+
     ; 发送EOI消息，否则下一次中断不发生
     mov al, 0x20
     out 0x20, al
@@ -229,6 +236,10 @@ asm_time_interrupt_handler:
     
     call c_time_interrupt_handler
 
+    pop gs
+    pop fs
+    pop es
+    pop ds
     popad
     iret
 
