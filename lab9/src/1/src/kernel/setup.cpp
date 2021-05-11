@@ -32,10 +32,37 @@ void first_process()
 {
     int pid = fork();
 
-    if(pid) {
-        printf("I am father, child pid: %d\n", pid);
-    } else {
-        printf("I am child, my pid: %d\n", programManager.running->pid);
+    if (pid == -1)
+    {
+        printf("can not fork\n");
+    }
+    else
+    {
+        if (pid)
+        {
+            printf("I am father, child pid: %d\n", pid);
+        }
+        else
+        {
+            printf("I am child, child pid: %d\n", programManager.running->pid);
+
+            pid = fork();
+            if (pid == -1)
+            {
+                printf("can not fork\n");
+            }
+            else
+            {
+                if (pid)
+                {
+                    printf("I am father, my pid: %d\n", pid);
+                }
+                else
+                {
+                    printf("I am child, child pid: %d\n", programManager.running->pid);
+                }
+            }
+        }
     }
 
     asm_halt();
@@ -43,7 +70,7 @@ void first_process()
 
 void first_thread(void *arg)
 {
-    
+
     printf("start process\n");
     programManager.executeProcess((const char *)first_process, 1);
     asm_halt();
@@ -71,7 +98,7 @@ extern "C" void setup_kernel()
     systemService.setSystemCall(1, (int)syscall_write);
     // 设置2号系统调用
     systemService.setSystemCall(2, (int)syscall_fork);
-    
+
     // 内存管理器
     memoryManager.initialize();
 
@@ -84,7 +111,7 @@ extern "C" void setup_kernel()
     }
 
     ListItem *item = programManager.readyPrograms.front();
-    PCB *firstThread = ListItem2PCB(item,tagInGeneralList);
+    PCB *firstThread = ListItem2PCB(item, tagInGeneralList);
     firstThread->status = ProgramStatus::RUNNING;
     programManager.readyPrograms.pop_front();
     programManager.running = firstThread;
