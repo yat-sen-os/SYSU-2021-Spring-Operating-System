@@ -33,7 +33,7 @@ int syscall_write(const char *str) {
 }
 
 int fork() {
-    return asm_system_call(2, (int)syscall_fork);
+    return asm_system_call(2);
 }
 
 int syscall_fork() {
