@@ -55,7 +55,7 @@ void first_process()
             {
                 if (pid)
                 {
-                    printf("I am father, my pid: %d\n", pid);
+                    printf("I am father, child pid: %d\n", pid);
                 }
                 else
                 {

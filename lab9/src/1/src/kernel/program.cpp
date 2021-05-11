@@ -388,7 +388,7 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
     child->stack[2] = 0;
     child->stack[3] = 0;
     child->stack[4] = (int)asm_start_process;
-    child->stack[5] = 0;        // asm_start_process 返回地址
+    child->stack[5] = 0;             // asm_start_process 返回地址
     child->stack[6] = (int)childpps; // asm_start_process 参数
 
     child->status = ProgramStatus::READY;
