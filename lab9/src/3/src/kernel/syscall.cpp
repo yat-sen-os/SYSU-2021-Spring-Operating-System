@@ -48,6 +48,10 @@ void syscall_exit(int ret) {
     programManager.exit(ret);
 }
 
-// 第4个系统调用, wait
-int wait(int *retval);
-int syscall_wait(int *retval);
+int wait(int *retval) {
+    return asm_system_call(4, retval);
+}
+
+int syscall_wait(int *retval) {
+    return programManager.wait(retval);
+}

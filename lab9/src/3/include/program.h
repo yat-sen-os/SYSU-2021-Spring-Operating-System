@@ -67,6 +67,7 @@ public:
 
     // 等待子进程
     int wait(int *retval);
+
 };
 
 void program_exit();

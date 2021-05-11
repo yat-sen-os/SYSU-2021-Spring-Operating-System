@@ -274,7 +274,7 @@ bool ProgramManager::createUserVirtualPool(PCB *process)
 
     // 计算位图所占的页数
     int pagesCount = ceil(bitmapLength, PAGE_SIZE);
-    
+
     int start = memoryManager.allocatePages(AddressPoolType::KERNEL, pagesCount);
     //printf("%x %d\n", start, pagesCount);
 
@@ -323,7 +323,7 @@ void load_process(const char *filename)
         asm_halt();
     }
     interruptStack->esp += PAGE_SIZE;
-    
+
     // 设置进程返回地址
     int *userStack = (int *)interruptStack->esp;
     userStack -= 3;
@@ -399,7 +399,7 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
     child->stack[2] = 0;
     child->stack[3] = 0;
     child->stack[4] = (int)asm_start_process;
-    child->stack[5] = 0;        // asm_start_process 返回地址
+    child->stack[5] = 0;             // asm_start_process 返回地址
     child->stack[6] = (int)childpps; // asm_start_process 参数
 
     child->status = ProgramStatus::READY;
@@ -510,11 +510,10 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
     return true;
 }
 
-
 void ProgramManager::exit(int ret)
 {
     interruptManager.disableInterrupt();
-    
+
     PCB *program = this->running;
     program->retValue = ret;
     program->status = ProgramStatus::DEAD;
@@ -536,7 +535,8 @@ void ProgramManager::exit(int ret)
 
             for (int j = 0; j < 1024; ++j)
             {
-                if(!(page[j] & 0x1)) {
+                if (!(page[j] & 0x1))
+                {
                     continue;
                 }
 
@@ -549,13 +549,68 @@ void ProgramManager::exit(int ret)
         }
 
         memoryManager.releasePages(AddressPoolType::KERNEL, (int)pageDir, 1);
-        
+
         int bitmapBytes = ceil(program->userVirtual.resources.length, 8);
         int bitmapPages = ceil(bitmapBytes, PAGE_SIZE);
 
         memoryManager.releasePages(AddressPoolType::KERNEL, (int)program->userVirtual.resources.bitmap, bitmapPages);
-
     }
 
     schedule();
+}
+
+int ProgramManager::wait(int *retval)
+{
+    PCB *child;
+    ListItem *item;
+    bool interrupt, flag;
+
+    while (true)
+    {
+        interrupt = interruptManager.getInterruptStatus();
+        interruptManager.disableInterrupt();
+
+        item = this->allPrograms.head.next;
+
+        flag = true;
+        while (item)
+        {
+            child = ListItem2PCB(item, tagInAllList);
+            if (child->parentPid == this->running->pid)
+            {
+                flag = false;
+                if (child->status == ProgramStatus::DEAD)
+                {
+                    break;
+                }
+            }
+        }
+
+        if (item)
+        {
+            if (retval)
+            {
+                *retval = child->retValue;
+            }
+
+            int pid = child->pid;
+            memoryManager.releasePages(AddressPoolType::KERNEL, (int)child, 1);
+            this->allPrograms.erase(&(child->tagInAllList));
+            interruptManager.setInterruptStatus(interrupt);
+            return pid;
+        }
+        else
+        {
+            if (flag)
+            {
+                interruptManager.setInterruptStatus(interrupt);
+                return -1;
+            }
+            else
+            {
+                interruptManager.setInterruptStatus(interrupt);
+                schedule();
+            }
+        }
+    }
 }
