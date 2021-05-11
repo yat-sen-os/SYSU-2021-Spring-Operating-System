@@ -123,7 +123,7 @@ void ProgramManager::schedule()
     running = next;
     readyPrograms.pop_front();
 
-    printf("schedule: %x %x\n", cur, next);
+    //printf("schedule: %x %x\n", cur, next);
 
     activateProgramPage(next);
 
@@ -584,6 +584,7 @@ int ProgramManager::wait(int *retval)
                     break;
                 }
             }
+            item = item->next;
         }
 
         if (item)
@@ -594,7 +595,6 @@ int ProgramManager::wait(int *retval)
             }
 
             int pid = child->pid;
-            memoryManager.releasePages(AddressPoolType::KERNEL, (int)child, 1);
             this->allPrograms.erase(&(child->tagInAllList));
             interruptManager.setInterruptStatus(interrupt);
             return pid;
@@ -603,6 +603,7 @@ int ProgramManager::wait(int *retval)
         {
             if (flag)
             {
+                
                 interruptManager.setInterruptStatus(interrupt);
                 return -1;
             }

@@ -49,7 +49,7 @@ void syscall_exit(int ret) {
 }
 
 int wait(int *retval) {
-    return asm_system_call(4, retval);
+    return asm_system_call(4, (int)retval);
 }
 
 int syscall_wait(int *retval) {

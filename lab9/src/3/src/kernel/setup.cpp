@@ -31,27 +31,42 @@ int syscall_0(int first, int second, int third, int forth, int fifth)
 void first_process()
 {
     int pid = fork();
+    int retval;
 
-    if (pid == -1)
+    if (pid)
     {
-        printf("can not fork\n");
-        asm_halt();
-    }
-    else
-    {
+        pid = fork();
         if (pid)
         {
-            printf("I am father\n");
+            while ((pid = wait(&retval)) != -1)
+            {
+                printf("wait for a child process, pid: %d, return value: %d\n", pid, retval);
+            }
+
+            printf("all child process exit\n");
             asm_halt();
         }
         else
         {
-            printf("I am child, exit\n");
+            uint32 tmp = 0xffffff;
+            while (tmp)
+                --tmp;
+            printf("exit, pid: %d\n", programManager.running->pid);
+            exit(123934);
         }
+    }
+    else
+    {
+        uint32 tmp = 0xffffff;
+        while (tmp)
+            --tmp;
+        printf("exit, pid: %d\n", programManager.running->pid);
+        exit(-123);
     }
 }
 
-void second_thread(void *arg) {
+void second_thread(void *arg)
+{
     printf("thread exit\n");
     //exit(0);
 }
@@ -91,7 +106,7 @@ extern "C" void setup_kernel()
     systemService.setSystemCall(3, (int)syscall_exit);
     // 设置4号系统调用
     systemService.setSystemCall(4, (int)syscall_wait);
-    
+
     // 内存管理器
     memoryManager.initialize();
 
