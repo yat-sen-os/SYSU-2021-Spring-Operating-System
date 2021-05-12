@@ -41,6 +41,7 @@ void first_process()
             while((pid = wait(nullptr)) != -1) {
 
             }
+            asm_halt();
         } else {
             Shell shell;
             shell.initialize();
