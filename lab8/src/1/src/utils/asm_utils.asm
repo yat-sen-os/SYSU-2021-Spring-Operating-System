@@ -22,8 +22,16 @@ ASM_UNHANDLED_INTERRUPT_INFO db 'Unhandled interrupt happened, halt...'
                              db 0
 ASM_IDTR dw 0
          dd 0
+
+ASM_TEMP dd 0
 ; int asm_systerm_call_handler();
 asm_system_call_handler:
+    push ds
+    push es
+    push fs
+    push gs
+    pushad
+
     push eax
 
     ; 栈段会从tss中自动加载
@@ -49,7 +57,15 @@ asm_system_call_handler:
     cli
 
     add esp, 5 * 4
-
+    
+    mov [ASM_TEMP], eax
+    popad
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    mov eax, [ASM_TEMP]
+    
     iret
 asm_system_call:
     push ebp
