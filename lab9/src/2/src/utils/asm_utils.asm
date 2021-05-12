@@ -28,6 +28,7 @@ ASM_IDTR dw 0
          dd 0
 ASM_GDTR dw 0
          dd 0
+ASM_TEMP dd 0
 ; void asm_update_cr3(int address)
 asm_update_cr3:
     push eax
@@ -116,12 +117,14 @@ asm_system_call_handler:
 
     add esp, 5 * 4
     
+    mov [ASM_TEMP], eax
     popad
     pop gs
     pop fs
     pop es
     pop ds
-
+    mov eax, [ASM_TEMP]
+    
     iret
 asm_system_call:
     push ebp

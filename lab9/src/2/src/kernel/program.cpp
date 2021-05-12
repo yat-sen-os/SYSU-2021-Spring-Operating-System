@@ -123,7 +123,7 @@ void ProgramManager::schedule()
     running = next;
     readyPrograms.pop_front();
 
-    printf("schedule: %x %x\n", cur, next);
+    //printf("schedule: %x %x\n", cur, next);
 
     activateProgramPage(next);
 
