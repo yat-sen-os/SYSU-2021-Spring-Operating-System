@@ -997,8 +997,6 @@ asm_time_interrupt_handler:
     iret
 ```
 
-
-
 至此，我们便完成了进程的启动，实现了从内核态到用户态的变化。
 
 # 进程的调度
