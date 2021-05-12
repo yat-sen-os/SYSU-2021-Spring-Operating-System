@@ -40,28 +40,11 @@ void first_process()
     {
         if (pid)
         {
-            printf("I am father, child pid: %d\n", pid);
+            printf("I am father, fork reutrn: %d\n", pid);
         }
         else
         {
-            printf("I am child, child pid: %d\n", programManager.running->pid);
-
-            pid = fork();
-            if (pid == -1)
-            {
-                printf("can not fork\n");
-            }
-            else
-            {
-                if (pid)
-                {
-                    printf("I am father, child pid: %d\n", pid);
-                }
-                else
-                {
-                    printf("I am child, child pid: %d\n", programManager.running->pid);
-                }
-            }
+            printf("I am child, fork return: %d, my pid: %d\n", pid, programManager.running->pid);
         }
     }
 

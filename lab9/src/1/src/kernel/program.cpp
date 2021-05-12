@@ -353,6 +353,7 @@ int ProgramManager::fork()
         return -1;
     }
 
+    // 创建子进程
     int pid = executeProcess("", 0);
     if (pid == -1)
     {
@@ -360,6 +361,7 @@ int ProgramManager::fork()
         return -1;
     }
 
+    // 初始化子进程
     PCB *child = ListItem2PCB(this->allPrograms.back(), tagInAllList);
     bool flag = copyProcess(parent, child);
 
@@ -376,21 +378,26 @@ int ProgramManager::fork()
 
 bool ProgramManager::copyProcess(PCB *parent, PCB *child)
 {
-    // 复制PCB
-    ProcessStartStack *childpps = (ProcessStartStack *)((int)child + PAGE_SIZE - sizeof(ProcessStartStack));
-    ProcessStartStack *parentpps = (ProcessStartStack *)((int)parent + PAGE_SIZE - sizeof(ProcessStartStack));
-    memcpy(parentpps, childpps, sizeof(ProcessStartStack));
-    childpps->eax = 0;
+    // 复制进程0级栈
+    ProcessStartStack *childpss =
+        (ProcessStartStack *)((int)child + PAGE_SIZE - sizeof(ProcessStartStack));
+    ProcessStartStack *parentpss =
+        (ProcessStartStack *)((int)parent + PAGE_SIZE - sizeof(ProcessStartStack));
+    memcpy(parentpss, childpss, sizeof(ProcessStartStack));
+    // 设置子进程的返回值为0
+    childpss->eax = 0;
 
-    child->stack = (int *)childpps - 7;
+    // 准备执行asm_switch_thread的栈的内容
+    child->stack = (int *)childpss - 7;
     child->stack[0] = 0;
     child->stack[1] = 0;
     child->stack[2] = 0;
     child->stack[3] = 0;
     child->stack[4] = (int)asm_start_process;
     child->stack[5] = 0;             // asm_start_process 返回地址
-    child->stack[6] = (int)childpps; // asm_start_process 参数
+    child->stack[6] = (int)childpss; // asm_start_process 参数
 
+    // 设置子进程的PCB
     child->status = ProgramStatus::READY;
     child->parentPid = parent->pid;
     child->priority = parent->priority;
@@ -403,6 +410,7 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
     int bitmapBytes = ceil(bitmapLength, 8);
     memcpy(parent->userVirtual.resources.bitmap, child->userVirtual.resources.bitmap, bitmapBytes);
 
+    // 从内核中分配一页作为中转页
     char *buffer = (char *)memoryManager.allocatePages(AddressPoolType::KERNEL, 1);
     if (!buffer)
     {
@@ -410,19 +418,19 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
         return false;
     }
 
-    // 子进程页目录表地址
+    // 子进程页目录表物理地址
     int childPageDirPaddr = memoryManager.vaddr2paddr(child->pageDirectoryAddress);
-    // 父进程页目录表地址
+    // 父进程页目录表物理地址
     int parentPageDirPaddr = memoryManager.vaddr2paddr(parent->pageDirectoryAddress);
     // 子进程页目录表指针(虚拟地址)
     int *childPageDir = (int *)child->pageDirectoryAddress;
     // 父进程页目录表指针(虚拟地址)
     int *parentPageDir = (int *)parent->pageDirectoryAddress;
 
-    //printf("%x %x\n", parent->pageDirectoryAddress, child->pageDirectoryAddress);
-
+    // 子进程页目录表初始化
     memset((void *)child->pageDirectoryAddress, 0, 768 * 4);
 
+    // 复制页目录表
     for (int i = 0; i < 768; ++i)
     {
         // 无对应页表
@@ -451,6 +459,7 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
         asm_update_cr3(parentPageDirPaddr); // 回到父进程虚拟地址空间
     }
 
+    // 复制页表和物理页
     for (int i = 0; i < 768; ++i)
     {
         // 无对应页表
@@ -481,20 +490,22 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
 
             // 构造物理页的起始虚拟地址
             void *pageVaddr = (void *)((i << 22) + (j << 12));
-            memcpy(pageVaddr, buffer, PAGE_SIZE);
             // 页表项
             int pte = pageTableVaddr[j];
+            // 复制出父进程物理页的内容到中转页
+            memcpy(pageVaddr, buffer, PAGE_SIZE);
 
             asm_update_cr3(childPageDirPaddr); // 进入子进程虚拟地址空间
 
             pageTableVaddr[j] = (pte & 0x00000fff) | paddr;
+            // 从中转页中复制到子进程的物理页
             memcpy(buffer, pageVaddr, PAGE_SIZE);
 
             asm_update_cr3(parentPageDirPaddr); // 回到父进程虚拟地址空间
         }
     }
 
-    // 归还从内核分配的页表
+    // 归还从内核分配的中转页
     memoryManager.releasePages(AddressPoolType::KERNEL, (int)buffer, 1);
     return true;
 }
