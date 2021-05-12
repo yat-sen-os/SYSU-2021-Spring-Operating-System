@@ -53,7 +53,7 @@ void first_process()
 
 void second_thread(void *arg) {
     printf("thread exit\n");
-    //exit(0);
+    exit(0);
 }
 
 void first_thread(void *arg)

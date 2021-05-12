@@ -513,8 +513,10 @@ bool ProgramManager::copyProcess(PCB *parent, PCB *child)
 
 void ProgramManager::exit(int ret)
 {
+    // 关中断
     interruptManager.disableInterrupt();
     
+    // 第一步，标记PCB状态为`DEAD`并放入返回值。
     PCB *program = this->running;
     program->retValue = ret;
     program->status = ProgramStatus::DEAD;
@@ -522,6 +524,7 @@ void ProgramManager::exit(int ret)
     int *pageDir, *page;
     int paddr;
 
+    // 第二步，如果PCB标识的是进程，则释放进程所占用的物理页、页表、页目录表和虚拟地址池bitmap的空间。
     if (program->pageDirectoryAddress)
     {
         pageDir = (int *)program->pageDirectoryAddress;
@@ -557,5 +560,6 @@ void ProgramManager::exit(int ret)
 
     }
 
+    // 第三步，立即执行线程/进程调度。
     schedule();
 }

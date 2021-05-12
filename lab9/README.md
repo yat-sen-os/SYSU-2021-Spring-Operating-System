@@ -87,6 +87,16 @@ fork的实现可以细化为4个问题的解决。
 
 > 代码在`src/1`下。
 
+我们首先在PCB中加入父进程pid这个属性。
+
+```cpp
+struct PCB
+{
+	...
+    int parentPid;            // 父进程pid
+};
+```
+
 fork是一个系统调用。为此，我们首先在`include/syscall.h`中加入fork系统调用和系统调用处理函数的定义。
 
 ```cpp
@@ -449,7 +459,193 @@ void first_thread(void *arg)
 
 # exit
 
+> 代码放置在`src/2`下。
+
+有时候我们在进程或线程中希望主动结束运行，此时，我们就需要用到系统调用exit。exit用于进程和线程的主动结束运行，如下所示，代码放置在`include/syscall.h`。
+
+```cpp
+// 第3个系统调用, exit
+void exit(int ret);
+void syscall_exit(int ret);
+```
+
+其中，`ret`参数表示返回值。
+
+在进程或线程调用exit后，我们会释放其占用的所有资源，只保留PCB。此时线程或进程的状态被标记为`DEAD`。进程或线程的PCB由专门的线程或进程来回收。在PCB被回收之前的`DEAD`线程或进程也被称为僵尸线程或僵尸进程。
+
+注意到我们调用exit时提供了返回值，返回值的处理是在线程或进程的PCB回收时进行的。但是，线程或进程除PCB以外的资源都被释放了，那么返回值放置在哪里呢？我们很容易地想到，返回值是放置在PCB中的。因此，我们为PCB加入存放返回值的属性。
+
+```cpp
+struct PCB
+{
+	...
+    int retValue;             // 返回值
+};
+```
+
+我们现在来实现上面两个函数。
+
+```cpp
+void exit(int ret) {
+    asm_system_call(3, ret);
+}
+
+void syscall_exit(int ret) {
+    programManager.exit(ret);
+}
+```
+
+exit的实现实际上是通过`ProgramManager::exit`来完成的，总的来看，exit的实现主要分为三步。
+
+1. 标记PCB状态为`DEAD`并放入返回值。
+2. 如果PCB标识的是进程，则释放进程所占用的物理页、页表、页目录表和虚拟地址池bitmap的空间。否则不做处理。
+3. 立即执行线程/进程调度。
+
+如下所示。
+
+```cpp
+void ProgramManager::exit(int ret)
+{
+    // 关中断
+    interruptManager.disableInterrupt();
+    
+    // 第一步，标记PCB状态为`DEAD`并放入返回值。
+    PCB *program = this->running;
+    program->retValue = ret;
+    program->status = ProgramStatus::DEAD;
+
+    int *pageDir, *page;
+    int paddr;
+
+    // 第二步，如果PCB标识的是进程，则释放进程所占用的物理页、页表、页目录表和虚拟地址池bitmap的空间。
+    if (program->pageDirectoryAddress)
+    {
+        pageDir = (int *)program->pageDirectoryAddress;
+        for (int i = 0; i < 768; ++i)
+        {
+            if (!(pageDir[i] & 0x1))
+            {
+                continue;
+            }
+
+            page = (int *)(0xffc00000 + (i << 12));
+
+            for (int j = 0; j < 1024; ++j)
+            {
+                if(!(page[j] & 0x1)) {
+                    continue;
+                }
+
+                paddr = memoryManager.vaddr2paddr((i << 22) + (j << 12));
+                memoryManager.releasePhysicalPages(AddressPoolType::USER, paddr, 1);
+            }
+
+            paddr = memoryManager.vaddr2paddr((int)page);
+            memoryManager.releasePhysicalPages(AddressPoolType::USER, paddr, 1);
+        }
+
+        memoryManager.releasePages(AddressPoolType::KERNEL, (int)pageDir, 1);
+        
+        int bitmapBytes = ceil(program->userVirtual.resources.length, 8);
+        int bitmapPages = ceil(bitmapBytes, PAGE_SIZE);
+
+        memoryManager.releasePages(AddressPoolType::KERNEL,
+                                   (int)program->userVirtual.resources.bitmap, 
+                                   bitmapPages);
+
+    }
+
+    // 第三步，立即执行线程/进程调度。
+    schedule();
+}
+```
+
+代码比较简单，实际上可以看成是`copyProcess`的部分逆过程，这里便不再赘述。
+
+上面说到的是主动调用exit的情况。我们看到，线程在退出的时候可以自动调用`program_exit`返回，而我们一直在强调进程还没有实现返回机制，所以需要在进程的末尾加上`asm_halt`来阻止进程返回。但是，我们已经实现了进程退出函数exit。那么进程有没有办法像线程一样在函数结束后主动调用exit来结束运行呢？答案是肯定的，我们只要在进程的3特权级栈中放入exit的地址和参数即可，当执行进程的函数退出后就会主动跳转到exit。
+
+为此，我们需要修改`load_process`，如下所示。
+
+```cpp
+void load_process(const char *filename)
+{
+	...
+
+    interruptStack->esp = memoryManager.allocatePages(AddressPoolType::USER, 1);
+    if (interruptStack->esp == 0)
+    {
+        printf("can not build process!\n");
+        process->status = ProgramStatus::DEAD;
+        asm_halt();
+    }
+    interruptStack->esp += PAGE_SIZE;
+    
+    // 设置进程返回地址
+    int *userStack = (int *)interruptStack->esp;
+    userStack -= 3;
+    userStack[0] = (int)exit;
+    userStack[1] = 0;
+    userStack[2] = 0;
+
+    interruptStack->esp = (int)userStack;
+
+	...
+}
+
+```
+
+第17行，我们在进程的3特权级栈中的栈顶处`userStack[0]`放入exit的地址，然后CPU会认为`userStack[1]`是exit的返回地址，`userStack[2]`是exit的参数。
+
+此时，我们修改`src/kernel/setup.cpp`来测试。
+
+```cpp
+void first_process()
+{
+    int pid = fork();
+
+    if (pid == -1)
+    {
+        printf("can not fork\n");
+        asm_halt();
+    }
+    else
+    {
+        if (pid)
+        {
+            printf("I am father\n");
+            asm_halt();
+        }
+        else
+        {
+            printf("I am child, exit\n");
+        }
+    }
+}
+
+void second_thread(void *arg) {
+    printf("thread exit\n");
+    exit(0);
+}
+
+void first_thread(void *arg)
+{
+
+    printf("start process\n");
+    programManager.executeProcess((const char *)first_process, 1);
+    programManager.executeThread(second_thread, nullptr, "second", 1);
+    asm_halt();
+}
+```
+
+编译运行，输出如下结果。
+
+<img src="/home/nelson/oslab/lab9/gallery/exit的实现.png" alt="exit的实现" style="zoom:80%;" />
+
+可以看到我们已经成功实现了exit。
+
 # wait
+
+
 
 # TODO
 
@@ -464,3 +660,5 @@ asm_syscall_handler修改
 僵尸进程的回收
 
 子进程的返回点
+
+跟踪exit
