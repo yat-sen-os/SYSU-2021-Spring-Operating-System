@@ -39,8 +39,8 @@ bootloader.bin : $(SRCDIR)/boot/bootloader.asm
 entry.obj : $(SRCDIR)/boot/entry.asm
 	$(ASM_COMPILER) -o entry.obj -g -f elf32 $(SRCDIR)/boot/entry.asm
 	
-kernel.bin : entry.obj $(OBJ)
-	$(LINKER) -o kernel.bin -melf_i386 -N entry.obj $(OBJ) -e enter_kernel -Ttext 0x00020000 --oformat binary
+kernel.bin : kernel.o
+	objcopy -O binary kernel.o kernel.bin
 	
 kernel.o : entry.obj $(OBJ)
 	$(LINKER) -o kernel.o -melf_i386 -N entry.obj $(OBJ) -e enter_kernel -Ttext 0x00020000
