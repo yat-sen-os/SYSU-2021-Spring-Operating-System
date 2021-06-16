@@ -25,9 +25,9 @@ void Shell::run()
     printLogo();
 
     move_cursor(7, 26);
-    printf("Welcome to SUMMER Project!\n");
-    printf("        https://gitee.com/nelsoncheung/sysu-2021-spring-operating-system/\n\n");
-    printf("  SUMMER is an OS course project.\n\n"
+    printf("Welcome to YatSenOS Project!\n");
+    printf("             https://github.com/YatSenOS/YatSenOS-Tutorial-Volume-1\n\n");
+    printf("  YatSenOS is an OS course project.\n\n"
            "  Proposed and led by\n"
            "           Prof. PengFei Chen.\n\n"
            "  Developed by\n"
@@ -45,14 +45,14 @@ void Shell::run()
 
 void Shell::printLogo()
 {
-    move_cursor(0, 19);
-    printf(" ____  _   _ __  __ __  __ _____ ____\n");
-    move_cursor(1, 19);
-    printf("/ ___|| | | |  \\/  |  \\/  | ____|  _ \\\n");
-    move_cursor(2, 19);
-    printf("\\___ \\| | | | |\\/| | |\\/| |  _| | |_) |\n");
-    move_cursor(3, 19);
-    printf(" ___) | |_| | |  | | |  | | |___|  _ <\n");
-    move_cursor(4, 19);
-    printf("|____/ \\___/|_|  |_|_|  |_|_____|_| \\_\\\n");
+    move_cursor(0, 17);
+    printf("__   __    _   ____              ___  ____ \n");
+    move_cursor(1, 17);
+    printf("\\ \\ / /_ _| |_/ ___|  ___ _ __  / _ \\/ ___| \n");
+    move_cursor(2, 17);
+    printf(" \\ V / _` | __\\___ \\ / _ \\ '_ \\| | | \\___ \\ \n");
+    move_cursor(3, 17);
+    printf("  | | (_| | |_ ___) |  __/ | | | |_| |___) |\n");
+    move_cursor(4, 17);
+    printf("  |_|\\__,_|\\__|____/ \\___|_| |_|\\___/|____/ \n");
 }
