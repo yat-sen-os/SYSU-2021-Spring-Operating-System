@@ -120,11 +120,7 @@ public:
 
             temp = high | low;
 
-            // 每次需要向0x1f0写入一个字（2个字节）
-            if( i == 128) {
-                printf("%x\n", temp);
-            }
-            
+            // 每次需要向0x1f0写入一个字（2个字节）            
             asm_outw_port(0x1f0, temp);
 
             // 硬盘的状态可以从0x1F7读入
