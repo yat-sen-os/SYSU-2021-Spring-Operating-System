@@ -122,10 +122,10 @@ public:
 
             // 每次需要向0x1f0写入一个字（2个字节）            
             asm_outw_port(0x1f0, temp);
-
             // 硬盘的状态可以从0x1F7读入
             // 最低位是err位
             asm_in_port(0x1f7, (uint8 *)&temp);
+            
             if (temp & 0x1)
             {
                 asm_in_port(0x1f1, (uint8 *)&temp);
@@ -133,6 +133,8 @@ public:
                 return;
             }
         }
+
+        busyWait();
     }
 
     // 以扇区为单位读出，每次读取一个扇区
@@ -164,6 +166,8 @@ public:
                 return;
             }
         }
+
+        busyWait();
     }
 
 private:
@@ -198,11 +202,10 @@ private:
         // 向0x1F7端口写入操作类型，读取=0x20，写入=0x30
         asm_out_port(0x1f7, type);
 
-        temp = 0;
+        asm_in_port(0x1f7, (uint8 *)&temp);
         while ((temp & 0x88) != 0x8)
         {
             // 读入硬盘状态
-            asm_in_port(0x1f7, (uint8 *)&temp);
             if (temp & 0x1)
             {
                 // 错误码
@@ -210,13 +213,18 @@ private:
                 printf("disk error, error code: %x\n", (temp & 0xff));
                 return false;
             }
+            asm_in_port(0x1f7, (uint8 *)&temp);
         }
         return true;
+    }
+
+    static void busyWait() {
+        uint temp = 0xfffff;
+        while(temp) --temp;
     }
 };
 
 #endif
-
 ```
 
 示例用法如下，我们在`setup.cpp`中加入如下代码。
